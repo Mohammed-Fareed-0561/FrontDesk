@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+coverage/
+.turbo/
+.vercel/
+
+# Environment - NEVER push secrets (keeps .env.example)
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+!.env.local.example
+*.local
+
+# Database - local SQLite (contains business data)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+prisma/dev.db
+dev.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+server.out.log
+server.err.log
+
+# Prisma
+node_modules/.prisma/
+node_modules/@prisma/client/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+
+# Misc
+.cache/
+.tmp/
+temp/
+uploads/
+coverage/
+.nyc_output/

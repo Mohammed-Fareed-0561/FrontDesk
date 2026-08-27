@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 47.4% 11.2%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 71.4% 12.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96.9%;
+    --secondary-foreground: 223 47.4% 11.1%;
+    --muted: 0 0% 96.9%;
+    --muted-foreground: 215.4 16.3% 56.5%;
+    --accent: 0 0% 96.9%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.2%;
+    --input: 214.3 31.8% 91.2%;
+    --ring: 215 20.2% 65.1%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 224 71.4% 12.9%;
+    --foreground: 0 0% 100%;
+    --card: 224 71.4% 12.9%;
+    --card-foreground: 0 0% 100%;
+    --popover: 224 71.4% 12.9%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96.9%;
+    --secondary-foreground: 224 71.4% 12.9%;
+    --muted: 215 28% 17%;
+    --muted-foreground: 215.4 16.3% 77%;
+    --accent: 215 28% 17%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 215 28% 17%;
+    --input: 215 28% 17%;
+    --ring: 224 71.4% 12.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.5rem;
+  }
+}
