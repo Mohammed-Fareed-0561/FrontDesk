@@ -18,6 +18,7 @@ import { aiRoutes } from "../modules/ai/ai.routes.js";
 import { qrRoutes } from "../modules/qr/qr.routes.js";
 import { analyticsRoutes } from "../modules/analytics/analytics.routes.js";
 import { mediaRoutes } from "../modules/media/media.routes.js";
+import { ordersRoutes } from "../modules/orders/orders.routes.js";
 import { AppError } from "../shared/errors/AppError.js";
 
 export async function buildApp() {
@@ -77,6 +78,7 @@ export async function buildApp() {
   await app.register(qrRoutes);
   await app.register(analyticsRoutes);
   await app.register(mediaRoutes);
+  await app.register(ordersRoutes);
 
   // 404
   app.setNotFoundHandler((req, reply) => {

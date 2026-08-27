@@ -1,10 +1,17 @@
 # FrontDesk — MEMORY.md
 
-**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 17:30 UTC
+**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 17:40 UTC
 
-## Implementation Status — ✅ STABLE v0.1 MVP + E2E FOUNDATION (2026-08-27)
+## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS (2026-08-27)
 
-### Current Increment: E2E & Tenant-Isolation Tests — VERIFIED
+### Current Increment: Orders Module P0 — VERIFIED
+- **Backend Orders** `backend/src/modules/orders/orders.routes.ts:1` + `backend/src/app/app.ts:20` — 6 endpoints: POST /businesses/:id/orders (transactional, server-side totals, cross-business injection blocked), GET /businesses/:id/orders (paginated, filtered), GET /businesses/:id/orders/:orderId, PATCH /orders/:id (notes), POST /orders/:id/confirm|cancel|complete (explicit state machine pending→confirmed→completed, pending/confirmed→cancelled), POST /orders/:id/payment (paymentStatus separate). OrderNumber `ORD-<ts>-<rnd>` unique per business, currency from business, audit + domain events for each transition. **Reuses existing Prisma Order/OrderItem schema** (no duplicate models), validated product ownership, quantity>0, transactional via `$transaction`.
+- **Backend Vitest** `backend/vitest.config.ts:1` + `backend/tests/orders.test.ts:1` (11 new) + `backend/tests/api.test.ts:1` (7) — total 18 tests: creation, multiple items, quantity validation, server-side totals ignore client unitPrice, invalid product 422, cross-business product 422, cross-tenant list/get 403, valid transitions, invalid transitions 422, transactional partial not created, cancellation, paymentStatus independence. Uses isolated test DB, fileParallelism false. **Verified**: `npm run test` → 18/18 pass.
+- **Frontend Playwright** `frontend/playwright.config.ts:1` + `frontend/e2e/orders.spec.ts:1` (3 new) + `frontend/e2e/critical-journey.spec.ts:1` (6) — total 9 tests: order lifecycle create→pay→confirm→complete, cross-tenant isolation, server-side totals. **Verified**: `npx playwright test` → 9/9 pass (chromium, prod build on 3000).
+- **Builds**: `npx tsc --noEmit` both PASS, `npm run build` both PASS (backend tsc, frontend 16 routes).
+- **Runtime**: backend 0.0.0.0:4000 health 200, frontend prod 0.0.0.0:3000 login 200, public storefront 200, orders CRUD verified via inject and playwright request.
+
+### Previous Increment: E2E & Tenant-Isolation Tests — VERIFIED
 - **Backend Vitest** `backend/vitest.config.ts:1` + `backend/tests/api.test.ts:1` + `backend/tests/helpers.ts:1` — 7 tests: health, auth/signup-login-me, tenant-isolation (cross-business 403), catalog public projection, critical journey (import→website→enquiry). Uses `DATABASE_URL=file:/home/user/project/backend/prisma/test.db` isolated from dev.db, `JWT_SECRET=test_jwt_secret_32chars_min_for_vitest`. **Verified**: `npm run test` → 7 passed.
 - **Frontend Playwright** `frontend/playwright.config.ts:1` + `frontend/e2e/critical-journey.spec.ts:1` — 6 tests: backend health, redirect /→/login, demo login→dashboard, public /b/royal-bakes, tenant isolation via API, catalog flow. BaseURL http://localhost:3000, **Verified**: `npx playwright test` → 6 passed (chromium, prod build).
 - **Builds**: `npx tsc --noEmit` both PASS, `npm run build` both PASS (backend tsc, frontend 16 routes).
@@ -34,10 +41,12 @@ FrontDesk/
 │   │   ├── layout.tsx + globals.css
 │   ├── components/ui/{button,card,input,table,dialog,badge,toast,use-toast,...} + layout/{Sidebar,Topbar}
 │   ├── hooks/useBusiness.ts, lib/api/client.ts, providers/*, types/index.ts, config/app.ts
+│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts} + playwright.config.ts
 ├── backend/
 │   ├── src/app/app.ts + plugins/auth.ts + config/env.ts
-│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media}
-│   ├── prisma/schema.prisma + seed.ts + migrations/
+│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders}
+│   ├── prisma/schema.prisma + seed.ts + migrations/ (Order,OrderItem reused, no duplicate)
+│   ├── tests/{api.test.ts,orders.test.ts,helpers.ts} + vitest.config.ts
 ├── documentation/ (59 specs)
 ├── docker-compose.yml, README.md, MEMORY.md
 ```
@@ -53,21 +62,22 @@ FrontDesk/
 - E2E relies on prod frontend for stability; dev vendor-chunks issue tracked.
 
 ## Next Recommended (if extending)
-1. **Orders Module P0** (highest value next) — schema ready `backend/prisma/schema.prisma: Order/OrderItem`, routes TODO per `documentation/ORDERS-AND-ORDER-MANAGEMENT.md:121` (lightweight manual orders, server-side totals, status, paymentStatus separate, tenant isolation, audit). Unlocks payments, analytics revenue, CRM.
-2. Media object-storage adapter (currently metadata only, file buffered in memory per `backend/src/modules/media/media.routes.ts:1`)
-3. Switch to Postgres: start Docker, `docker compose up -d`, update `DATABASE_URL`, change prisma provider to postgresql, re-migrate.
-4. Real AI provider abstraction + Knowledge RAG per `documentation/AI-BUSINESS-COPILOT.md`
+1. **Payments Lightweight** — manual paymentStatus already separate; next add `POST /orders/:id/payment` hardening + audit + idempotency, then optional Razorpay mock per `documentation/PAYMENTS-AND-TRANSACTIONS.md`
+2. **Media object-storage adapter** (currently metadata only, file buffered in memory per `backend/src/modules/media/media.routes.ts:1`)
+3. **Switch to Postgres**: start Docker, `docker compose up -d`, update `DATABASE_URL`, change prisma provider to postgresql, re-migrate.
+4. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md`
+5. **Bookings/Appointments** per `documentation/BOOKINGS-AND-APPOINTMENTS.md` (similar vertical slice to Orders)
 
-## Files Changed (v0.1 + E2E)
-- backend: app, 13 modules, prisma, seed, config, package.json (Fastify 5) + **new**: `vitest.config.ts`, `tests/helpers.ts`, `tests/api.test.ts`, `prisma/test.db`, `src/config/env.ts` (dotenv fix), package.json added `dotenv`
-- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + **new**: `playwright.config.ts`, `e2e/critical-journey.spec.ts`, `next.config.js` (headers for e2b.app, reverted experimental), package.json added `@playwright/test`
-- root: .gitignore, docker-compose.yml, README.md, MEMORY.md, `.ideavo/config` (runStep now `bash -c 'cd backend && set -a; source .env; set +a; PORT=4000 HOST=0.0.0.0 ./node_modules/.bin/tsx watch src/server.ts'`)
+## Files Changed (v0.1 + E2E + Orders)
+- backend: app, 13 modules, prisma, seed, config, package.json (Fastify 5) + **new**: `vitest.config.ts`, `tests/helpers.ts`, `tests/api.test.ts`, `tests/orders.test.ts` (11), `src/modules/orders/orders.routes.ts`, `prisma/test.db`, `src/config/env.ts` (dotenv fix), `src/app/app.ts` (register ordersRoutes), package.json added `dotenv`
+- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + **new**: `playwright.config.ts`, `e2e/critical-journey.spec.ts`, `e2e/orders.spec.ts` (3), `next.config.js` (headers for e2b.app, reverted experimental), package.json added `@playwright/test` + `test:e2e` scripts
+- root: .gitignore (+ test-results, playwright-report), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config` (runStep now `bash -c 'cd backend && set -a; source .env; set +a; PORT=4000 HOST=0.0.0.0 ./node_modules/.bin/tsx watch src/server.ts'`)
 
-## Verification (2026-08-27 17:30)
+## Verification (2026-08-27 17:40)
 - `npm --prefix backend run lint` PASS
 - `npm --prefix frontend run type-check` PASS
 - `npm --prefix backend run build` PASS
 - `npm --prefix frontend run build` PASS (16 routes)
-- `npm --prefix backend run test` 7/7 PASS
-- `bash -c 'cd frontend && npx playwright test'` 6/6 PASS (prod)
-- Runtime: `curl /api/v1/health` 200, `curl /api/v1/auth/login` demo 200, `curl /b/royal-bakes` 200 Royal Bakes
+- `npm --prefix backend run test` 18/18 PASS (7 api + 11 orders)
+- `bash -c 'cd frontend && npx playwright test'` 9/9 PASS (6 critical + 3 orders, prod, chromium)
+- Runtime: `curl /api/v1/health` 200, `curl /api/v1/auth/login` demo 200, `curl /b/royal-bakes` 200 Royal Bakes, `curl /api/v1/businesses/:id/orders` 200 with tenant isolation

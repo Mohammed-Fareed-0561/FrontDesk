@@ -8,6 +8,7 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 30000,
     sequence: { concurrent: false },
+    fileParallelism: false,
     env: {
       DATABASE_URL: "file:/home/user/project/backend/prisma/test.db",
       JWT_SECRET: "test_jwt_secret_32chars_min_for_vitest",
