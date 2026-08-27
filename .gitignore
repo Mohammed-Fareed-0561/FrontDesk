@@ -69,3 +69,7 @@ uploads/
 coverage/
 .nyc_output/
 .ideavo/project
+test-results/
+playwright-report/
+blob-report/
+frontend/test-results/

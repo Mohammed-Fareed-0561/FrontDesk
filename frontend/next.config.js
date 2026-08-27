@@ -19,12 +19,6 @@ const nextConfig = {
       },
     ];
   },
-  experimental: {
-    serverActions: {
-      allowedOrigins: ["*.e2b.app", "*.e2b.dev"],
-      allowedForwardedHosts: ["*.e2b.app", "*.e2b.dev"],
-    },
-  },
 };
 
 module.exports = nextConfig;
