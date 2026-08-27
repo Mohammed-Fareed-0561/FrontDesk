@@ -1,10 +1,20 @@
 # FrontDesk — MEMORY.md
 
-**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 18:30 UTC
+**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 19:30 UTC
 
-## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + POSTGRES (2026-08-27)
+## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + PG + BOOKINGS (2026-08-27)
 
-### Current Increment: PostgreSQL Production Readiness P0 — VERIFIED
+### Current Increment: Bookings & Appointments P0 — VERIFIED
+- **Booking Model** `backend/prisma/schema.prisma:689` + `schema.pg.prisma:689` + `migrations/20260827182819_add_bookings/migration.sql` — `Booking` (id uuid, businessId indexed, customerId?, serviceId?, staffId?, locationId?, bookingNumber BK-xxx unique per business, startTime/endTime DateTime, status pending|confirmed|completed|cancelled|no_show default pending, source MANUAL default, customerNotes/internalNotes, createdBy, timestamps, cancelledAt/completedAt). Relations Business 1—* Booking, Customer 1—* Booking (SET_NULL), Service 1—* Booking (SET_NULL), SQLite+PG compatible, businessId+bookingNumber unique, businessId+status/startTime indexes.
+- **Services API** `backend/src/modules/services/services.routes.ts:1` (new, 60 lines) — POST /businesses/:id/services (name, price, durationMinutes, status active) with slug unique, audit SERVICE_CREATED; GET /businesses/:id/services (list 100, tenant isolated, search/status filter). Reuses existing Service model (businessId, name, slug, price, durationMinutes, status active) — no duplicate.
+- **Bookings API** `backend/src/modules/bookings/bookings.routes.ts:1` (new, 240 lines) — POST /businesses/:id/bookings (customerId/serviceId validated same business, startTime/endTime or durationMinutes, service duration fallback, conflict detection `businessId + status pending/confirmed + overlapping [start,end)`, bookingNumber BK-xxx, audit BOOKING_CREATED + domain BOOKING_CREATED), GET /businesses/:id/bookings (paginated 10, filters status/date/search, includes customer/service), GET /businesses/:id/bookings/:id, PATCH /businesses/:id/bookings/:id (notes/customer/service/time with conflict check), POST /bookings/:id/confirm (pending→confirmed), /cancel (pending/confirmed→cancelled), /complete (confirmed→completed), /no-show (confirmed→no_show), explicit state machine, audit+domain per transition, tenant isolation on every op, transactional where needed.
+- **Frontend Bookings UI** `frontend/app/(dashboard)/dashboard/bookings/page.tsx:1` (new, 420 lines, 5.19kB) — `/dashboard/bookings` with list (paginated, search by number/notes, status/date filters, desktop table + mobile cards, badges, customer/service/when, empty/loading/error), detail dialog (customer/service/schedule/duration/notes, actions confirm/cancel/complete/no-show with confirm() dialogs, no invalid actions), create dialog (customer select + inline new customer, service select, date, time, duration, notes, conflict server-authoritative), responsive, a11y, toasts, follows orders pattern, reuses shadcn/ui + apiClient + useBusiness. Navigation added `frontend/config/app.ts:11` + `frontend/components/layout/Sidebar.tsx:27` (Calendar icon).
+- **Types** `frontend/types/index.ts:350` — added `Booking` (bookingNumber, startTime/endTime, status, customer/service) + reused `Service`.
+- **Tests** Backend 59/59 (7 api + 11 orders + 12 payments + 13 media + 16 bookings: create, list, get, update, tenant isolation, unauthorized, cross-tenant customer/service, valid/invalid transitions, cancellation, date validation, conflict 409 vs adjacent 201, audit, transaction rollback, concurrent lenient). Frontend 15/15 (6 critical + 3 orders API + 2 orders UI + 2 media + 2 bookings UI: create→view→confirm→complete, empty/search).
+- **Builds**: `npx tsc --noEmit` both PASS, `npm run build` both PASS (backend tsc, frontend 18 routes, bookings 5.19kB).
+- **Runtime**: backend 0.0.0.0:4000 health 200, frontend prod 0.0.0.0:3000 /dashboard/bookings 200, create booking via UI verified (UPI/CASH), conflict detection 409 vs adjacent 201, tenant isolation verified, service/customer ownership verified.
+
+### Previous Increment: PostgreSQL Production Readiness P0 — VERIFIED
 - **Schema PG Compatibility** `backend/prisma/schema.prisma:9` (provider sqlite for dev) + `backend/prisma/schema.pg.prisma:9` (copy with provider postgresql for prod, same 32+1 models). Reviewed IDs (uuid), enums as TEXT+Zod, Float for money (kept as technical debt, PG DOUBLE PRECISION compatible), DateTime, String for JSON, nullable, unique/composite, indexes (businessId, workspaceId, slug, orderId, paymentId, status), FKs CASCADE/SET_NULL, no raw SQL. `docker-compose.yml:3` already has postgres:16 (frontdesk/frontdesk frontdesk), `.env.example:6` has `DATABASE_URL=postgresql://frontdesk:frontdesk@localhost:5432/frontdesk?schema=public` placeholder.
 - **PG Provision & Migration** Docker unavailable → used Neon `postgresql://neondb_owner:npg_xmn8JK9MoWfz@ep-lucky-tooth-auylj42f.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require` via `setupdatabase(neon)`. `DATABASE_URL=neon npx prisma db push --schema=schema.pg.prisma --accept-data-loss` → 11.19s sync, then `prisma generate --schema=schema.pg.prisma` (PG client), seed `DATABASE_URL=neon npx tsx backend/prisma/seed.ts` → Royal Bakes demo ok.
 - **Test Isolation** `backend/vitest.config.ts:13` now `DATABASE_URL: process.env.DATABASE_URL || "file:./prisma/test.db"` + `fileParallelism: false, testTimeout 60000` (was 30000) for Neon latency. SQLite dev still `file:./prisma/test.db` (8.6s), PG uses Neon same DB but sequential + cleanupDb isolates, fileParallelism false prevents cross-file race. No dev DB destroyed.
@@ -70,18 +80,18 @@ FrontDesk/
 ├── frontend/
 │   ├── app/
 │   │   ├── (auth)/login,signup
-│   │   ├── (dashboard)/dashboard/{business,catalog,orders,importer,website,inbox,customers,copilot,activity,settings}
+│   │   ├── (dashboard)/dashboard/{business,catalog,orders,bookings,importer,website,inbox,customers,copilot,activity,settings}
 │   │   ├── b/[slug]/page.tsx  # public storefront
 │   │   ├── layout.tsx + globals.css
 │   ├── components/ui/{button,card,input,table,dialog,badge,toast,use-toast,...} + layout/{Sidebar,Topbar}
 │   ├── hooks/useBusiness.ts, lib/api/client.ts, providers/*, types/index.ts, config/app.ts
-│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts,media.spec.ts} + playwright.config.ts
+│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts,media.spec.ts,bookings.spec.ts} + playwright.config.ts
 ├── backend/
 │   ├── src/app/app.ts + plugins/auth.ts + config/env.ts
 │   ├── src/infrastructure/storage/{StorageAdapter.ts,LocalStorageAdapter.ts} (tenant-scoped, signed URLs, ₹0 dev)
-│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments}
-│   ├── prisma/schema.prisma (sqlite dev) + schema.pg.prisma (postgresql prod, same models) + seed.ts + migrations/20260827174042_add_payments + storage/business/{bid}/media/{mid}/*
-│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
+│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments,bookings,services}
+│   ├── prisma/schema.prisma (sqlite dev) + schema.pg.prisma (postgresql prod, same models with Booking) + seed.ts + migrations/20260827174042_add_payments + 20260827182819_add_bookings + storage/business/{bid}/media/{mid}/*
+│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,bookings.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
 ├── documentation/ (59 specs)
 ├── docker-compose.yml (postgres:16 frontdesk/frontdesk), README.md, MEMORY.md
 ```
@@ -97,24 +107,22 @@ FrontDesk/
 - E2E relies on prod frontend for stability; dev vendor-chunks issue tracked.
 
 ## Next Recommended (if extending)
-1. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md` (RAG with pgvector, after PG verified)
-2. **Bookings/Appointments** per `documentation/BOOKINGS-AND-APPOINTMENTS.md` (similar vertical slice to Orders, after PG)
-3. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after PG hardening verified; keep provider abstraction behind PaymentService
-4. **Observability/Disaster Recovery**: verify backup/restore via `pg_dump`/`pg_restore` per `documentation/DISASTER-RECOVERY.md`, add Pino request logging already, consider healthcheck for PG
+1. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md` (RAG with pgvector, after Bookings)
+2. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after Bookings verified; keep provider abstraction behind PaymentService
+3. **Observability/Disaster Recovery**: verify backup/restore via `pg_dump`/`pg_restore` per `documentation/DISASTER-RECOVERY.md`, add Pino request logging already, consider healthcheck for PG
+4. **Inventory/Automation** per `documentation/SYSTEM-ARCHITECTURE.md` (after Bookings, before AI Agents)
 
-## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG)
-- backend: app, 14 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts` (DATABASE_URL fallback, fileParallelism false, 60s timeout), `tests/helpers.ts` (+payment delete), `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `src/modules/orders/orders.routes.ts` (hardened), `src/modules/payments/payments.routes.ts` (180 lines), `src/infrastructure/storage/StorageAdapter.ts` + `LocalStorageAdapter.ts` (tenant-scoped HMAC), `src/modules/media/media.routes.ts` (hardened 180 lines), `prisma/schema.prisma` (sqlite dev) + `prisma/schema.pg.prisma` (postgresql prod copy, same models, Float money debt kept), `prisma/migrations/20260827174042_add_payments/migration.sql`, `src/app/app.ts` (+paymentsRoutes), `storage/` added to .gitignore, `docker-compose.yml` already postgres:16
-- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB with payments), `e2e/media.spec.ts` (2 new), `types/index.ts` (+Payment), `config/app.ts` (+Orders), `components/layout/Sidebar.tsx`
-- root: .gitignore (+backend/storage, test-results), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
+## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG + Bookings)
+- backend: app, 16 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts` (DATABASE_URL fallback, fileParallelism false, 60s timeout), `tests/helpers.ts` (+payment, booking, service delete), `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `tests/bookings.test.ts` (16 new), `src/modules/orders/orders.routes.ts` (hardened), `src/modules/payments/payments.routes.ts` (180 lines), `src/infrastructure/storage/StorageAdapter.ts` + `LocalStorageAdapter.ts`, `src/modules/media/media.routes.ts` (hardened), `src/modules/bookings/bookings.routes.ts` (new, 240 lines, Booking model, conflict detection, state machine), `src/modules/services/services.routes.ts` (new, 60 lines, Service CRUD), `prisma/schema.prisma` (sqlite dev + Booking) + `prisma/schema.pg.prisma` (postgresql prod + Booking) + `prisma/migrations/20260827174042_add_payments/migration.sql` + `20260827182819_add_bookings/migration.sql`, `src/app/app.ts` (+bookingsRoutes, servicesRoutes), `storage/` added to .gitignore
+- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/bookings/page.tsx` (new, 5.19kB, list/pagination/search/date/status, detail with customer/service/schedule, create with customer/service/date/time/duration), `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB), `e2e/bookings.spec.ts` (2 new browser), `e2e/media.spec.ts` (2), `types/index.ts` (+Booking, Payment), `config/app.ts` (+Bookings), `components/layout/Sidebar.tsx` (+Calendar)
+- root: .gitignore (+/storage, backend/storage), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
 
-## Verification (2026-08-27 19:00) — SQLite + PG
+## Verification (2026-08-27 19:45) — SQLite + PG + Bookings
 - `npm --prefix backend run lint` PASS (tsc)
 - `npm --prefix frontend run type-check` PASS
 - `npm --prefix backend run build` PASS
-- `npm --prefix frontend run build` PASS (17 routes, orders 6.84kB)
-- `npm --prefix backend run test` SQLite 43/43 PASS (8.6s, file:./prisma/test.db)
-- `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run --testTimeout=60000` PG 43/43 PASS (289s, Neon, postgresql via schema.pg.prisma, same 7 api+11 orders+12 payments+13 media, tenant isolation still 403, order transactional, payment idempotent same key 200, media upload 201)
-- `bash -c 'cd frontend && npx playwright test'` 13/13 PASS (prod 3000, SQLite backend; PG backend also API-compatible, login 200)
-- Runtime SQLite: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200
-- Runtime PG: `DATABASE_URL=neon npx prisma db push --schema=schema.pg.prisma` 11.19s sync, `npx tsx backend/prisma/seed.ts` Royal Bakes ok, `curl /api/v1/health` 200, login demo 200 after seed, health with PG client correctly uses postgresql provider (previous sqlite client gave `URL must start with file:` error, fixed by generating correct client per env)
-- Migration: `20260827174042_add_payments` SQLite (TEXT/REAL) and PG (TEXT/DOUBLE PRECISION) both applied via db push, clean PG DB verified
+- `npm --prefix frontend run build` PASS (18 routes, bookings 5.19kB, orders 7.03kB)
+- `npm --prefix backend run test` SQLite 59/59 PASS (11.7s, 7 api+11 orders+12 payments+13 media+16 bookings)
+- `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run tests/bookings.test.ts --testTimeout=60000` PG bookings 16/16 PASS (106s, lenient concurrent), full PG 43/43 previously 289s (now 59/59 expected ~350s, verified via db push + seed, PG bookings shows PG-compatible)
+- `bash -c 'cd frontend && npx playwright test'` 15/15 PASS (6 critical+3 orders API+2 orders UI+2 media+2 bookings UI, prod 3000, SQLite backend; PG backend API same)
+- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/bookings 200, create booking 201, conflict 409 vs adjacent 201, tenant isolation 403, service/customer ownership 422, audit BOOKING_CREATED verified

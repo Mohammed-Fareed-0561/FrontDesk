@@ -123,6 +123,7 @@ model Business {
   auditLogs  AuditLog[]
   domainEvents DomainEvent[]
   payments   Payment[]
+  bookings   Booking[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -290,10 +291,11 @@ model Service {
   updatedAt       DateTime @updatedAt @map("updated_at")
   deletedAt       DateTime? @map("deleted_at")
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+   bookings Booking[]
 
-  @@unique([businessId, slug])
-  @@map("services")
+   @@unique([businessId, slug])
+   @@map("services")
 }
 
 model Offer {
@@ -518,14 +520,15 @@ model Customer {
   updatedAt   DateTime @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  enquiries Enquiry[]
-  conversations Conversation[]
-  consents CustomerConsent[]
+   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+   enquiries Enquiry[]
+   conversations Conversation[]
+   consents CustomerConsent[]
+   bookings Booking[]
 
-  @@index([businessId, phone])
-  @@index([businessId, email])
-  @@map("customers")
+   @@index([businessId, phone])
+   @@index([businessId, email])
+   @@map("customers")
 }
 
 model CustomerConsent {
@@ -676,11 +679,42 @@ model Payment {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  @@unique([businessId, paymentNumber])
+   @@unique([businessId, paymentNumber])
   @@unique([businessId, idempotencyKey])
   @@index([businessId, status])
   @@index([orderId])
   @@map("payments")
+}
+
+model Booking {
+  id            String    @id @default(uuid())
+  businessId    String    @map("business_id")
+  customerId    String?   @map("customer_id")
+  serviceId     String?   @map("service_id")
+  staffId       String?   @map("staff_id")
+  locationId    String?   @map("location_id")
+  bookingNumber String    @map("booking_number")
+  startTime     DateTime  @map("start_time")
+  endTime       DateTime  @map("end_time")
+  status        String    @default("pending")
+  source        String?   @default("MANUAL")
+  customerNotes String?   @map("customer_notes")
+  internalNotes String?   @map("internal_notes")
+  createdBy     String?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  cancelledAt   DateTime? @map("cancelled_at")
+  completedAt   DateTime? @map("completed_at")
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  service  Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, bookingNumber])
+  @@index([businessId, status])
+  @@index([businessId, startTime])
+  @@index([customerId])
+  @@map("bookings")
 }
 
 // Knowledge / Memory

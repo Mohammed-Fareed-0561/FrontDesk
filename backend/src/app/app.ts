@@ -20,6 +20,8 @@ import { analyticsRoutes } from "../modules/analytics/analytics.routes.js";
 import { mediaRoutes } from "../modules/media/media.routes.js";
 import { ordersRoutes } from "../modules/orders/orders.routes.js";
 import { paymentsRoutes } from "../modules/payments/payments.routes.js";
+import { bookingsRoutes } from "../modules/bookings/bookings.routes.js";
+import { servicesRoutes } from "../modules/services/services.routes.js";
 import { AppError } from "../shared/errors/AppError.js";
 
 export async function buildApp() {
@@ -81,6 +83,8 @@ export async function buildApp() {
   await app.register(mediaRoutes);
   await app.register(ordersRoutes);
   await app.register(paymentsRoutes);
+  await app.register(bookingsRoutes);
+  await app.register(servicesRoutes);
 
   // 404
   app.setNotFoundHandler((req, reply) => {

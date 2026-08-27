@@ -9,6 +9,7 @@ export const NAVIGATION = {
     { label: "Dashboard", href: "/dashboard" },
     { label: "Catalog", href: "/dashboard/catalog" },
     { label: "Orders", href: "/dashboard/orders" },
+    { label: "Bookings", href: "/dashboard/bookings" },
     { label: "Importer", href: "/dashboard/importer" },
     { label: "Website", href: "/dashboard/website" },
     { label: "Inbox", href: "/dashboard/inbox" },

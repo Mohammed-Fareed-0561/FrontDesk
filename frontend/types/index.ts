@@ -347,6 +347,47 @@ export type Payment = {
   updatedAt: string;
 };
 
+export type Service = {
+  id: string;
+  businessId: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  price: number | null;
+  durationMinutes: number | null;
+  currency: string;
+  status: string;
+  isFeatured: boolean;
+  sortOrder: number;
+  metadata: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};
+
+export type Booking = {
+  id: string;
+  businessId: string;
+  customerId: string | null;
+  serviceId: string | null;
+  staffId: string | null;
+  locationId: string | null;
+  bookingNumber: string;
+  startTime: string;
+  endTime: string;
+  status: "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
+  source: string | null;
+  customerNotes: string | null;
+  internalNotes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  cancelledAt: string | null;
+  completedAt: string | null;
+  customer?: Customer | null;
+  service?: Service | null;
+};
+
 export type AnalyticsOverview = {
   counts: {
     products: number;

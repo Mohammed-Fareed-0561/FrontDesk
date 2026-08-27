@@ -17,6 +17,8 @@ export async function cleanupDb() {
   await t.aiOutput.deleteMany();
   await t.aiRequest.deleteMany();
   await (t as any).payment?.deleteMany?.();
+  await (t as any).booking?.deleteMany?.();
+  await t.service.deleteMany();
   await t.orderItem.deleteMany();
   await t.order.deleteMany();
   await t.message.deleteMany();
