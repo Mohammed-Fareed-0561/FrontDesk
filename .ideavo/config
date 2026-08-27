@@ -1,0 +1,104 @@
+{
+  "systemSetup": [],
+  "templateName": "custom",
+  "projectDependencies": [
+    {
+      "name": "Install Backend Deps",
+      "command": "npm install --prefix backend"
+    },
+    {
+      "name": "Install Frontend Deps",
+      "command": "npm install --prefix frontend --legacy-peer-deps"
+    },
+    {
+      "name": "Generate Prisma Client",
+      "command": "./backend/node_modules/.bin/prisma generate --schema=backend/prisma/schema.prisma"
+    },
+    {
+      "name": "Migrate Database",
+      "command": "DATABASE_URL=\"file:./dev.db\" ./backend/node_modules/.bin/prisma migrate dev --name init --schema=backend/prisma/schema.prisma"
+    },
+    {
+      "name": "Seed Database",
+      "command": "DATABASE_URL=\"file:./dev.db\" npm --prefix backend run seed"
+    }
+  ],
+  "codeChecks": [
+    {
+      "name": "Backend Typecheck",
+      "command": "npm --prefix backend run lint"
+    },
+    {
+      "name": "Frontend Typecheck",
+      "command": "npm --prefix frontend run type-check"
+    },
+    {
+      "name": "Frontend Lint",
+      "command": "npm --prefix frontend run lint"
+    }
+  ],
+  "buildSteps": [
+    {
+      "name": "Build Backend",
+      "command": "npm --prefix backend run build"
+    },
+    {
+      "name": "Build Frontend",
+      "command": "npm --prefix frontend run build"
+    }
+  ],
+  "runStep": [
+    {
+      "name": "Run Backend",
+      "command": "PORT=4000 HOST=0.0.0.0 npm --prefix backend run dev",
+      "port": "4000"
+    },
+    {
+      "name": "Run Frontend",
+      "command": "npm --prefix frontend run dev -- --port 3000 --hostname 0.0.0.0",
+      "port": "3000"
+    }
+  ],
+  "deploySteps": [
+    {
+      "name": "Build Backend",
+      "command": "npm --prefix backend run build"
+    },
+    {
+      "name": "Build Frontend",
+      "command": "npm --prefix frontend run build"
+    },
+    {
+      "name": "Start Backend",
+      "command": "npm --prefix backend run start"
+    },
+    {
+      "name": "Start Frontend",
+      "command": "npm --prefix frontend run start -- --port 3000 --hostname 0.0.0.0"
+    }
+  ],
+  "cleanupFiles": [
+    "backend/node_modules",
+    "frontend/node_modules",
+    "backend/dist",
+    "frontend/.next",
+    "backend/prisma/dev.db",
+    "backend/dev.db",
+    "backend/prisma/dev.db-journal",
+    "frontend/tsconfig.tsbuildinfo",
+    ".next",
+    "dist",
+    "build"
+  ],
+  "packageManager": "npm",
+  "envPaths": [
+    {
+      "name": "backend",
+      "path": "backend/.env"
+    },
+    {
+      "name": "frontend",
+      "path": "frontend/.env.local"
+    }
+  ]
+}
