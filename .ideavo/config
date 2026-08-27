@@ -3,6 +3,10 @@
   "templateName": "custom",
   "projectDependencies": [
     {
+      "name": "Create env files",
+      "command": "cp backend/.env.example backend/.env && cp frontend/.env.local.example frontend/.env.local; echo \"env files ready\""
+    },
+    {
       "name": "Install Backend Deps",
       "command": "npm install --prefix backend"
     },
@@ -12,15 +16,15 @@
     },
     {
       "name": "Generate Prisma Client",
-      "command": "./backend/node_modules/.bin/prisma generate --schema=backend/prisma/schema.prisma"
+      "command": "npm --prefix backend exec prisma generate"
     },
     {
       "name": "Migrate Database",
-      "command": "DATABASE_URL=\"file:./dev.db\" ./backend/node_modules/.bin/prisma migrate dev --name init --schema=backend/prisma/schema.prisma"
+      "command": "npm --prefix backend exec prisma migrate dev --name init"
     },
     {
       "name": "Seed Database",
-      "command": "DATABASE_URL=\"file:./dev.db\" npm --prefix backend run seed"
+      "command": "npm --prefix backend run seed"
     }
   ],
   "codeChecks": [
