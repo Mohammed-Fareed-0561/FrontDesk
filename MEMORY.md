@@ -1,10 +1,19 @@
 # FrontDesk — MEMORY.md
 
-**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 18:10 UTC
+**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 18:50 UTC
 
-## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS HARDENING (2026-08-27)
+## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA (2026-08-27)
 
-### Current Increment: Payment Domain Hardening P0 — VERIFIED
+### Current Increment: Media Object Storage Adapter P0 — VERIFIED
+- **Storage Adapter** `backend/src/infrastructure/storage/StorageAdapter.ts:1` + `LocalStorageAdapter.ts:1` — provider-neutral interface (upload/download/delete/exists/getPublicUrl/getSignedUrl), sanitization `sanitizeFilename`, `buildStorageKey(businessId, mediaId, filename)` → `business/{bid}/media/{mid}/{safe}` (tenant-scoped opaque, no `..`/`/`). Local dev adapter stores under `STORAGE_PATH` or `cwd/storage` via `fs/promises`, `mkdir -p`, HMAC-SHA256 signed URLs `exp+sig` (JWT_SECRET, 300s default, timingSafeEqual), `verifySignedUrl`.
+- **Media API Hardened** `backend/src/modules/media/media.routes.ts:1` (rewritten, 180 lines) — POST /businesses/:id/media (auth, `assertBusinessAccess`, `req.file()`, validate 5MB, allowed MIME image/* + jpeg/png/webp/gif/svg/pdf/csv, ext whitelist, filename sanitization, path traversal block, storageKey via `buildStorageKey`, `storage.upload`, audit MEDIA_UPLOADED, returns signedUrl+publicUrl), GET /businesses/:id/media (list 100, tenant isolated, adds signedUrl), GET /businesses/:id/media/:id (single + exists + signedUrl), GET /businesses/:id/media/:id/file (private, auth, tenant, 404 OBJECT_MISSING if metadata exists but file missing, Cache-Control private), GET /media/signed/:key?exp&sig (public signed, verify HMAC, 401 invalid/expired), GET /public/business/:slug/media/:id/file (public, checks business active and asset not private, Cache-Control public), DELETE /businesses/:id/media/:id (auth, tenant, checks productImage/website published refs, audit MEDIA_DELETE_BLOCKED, storage.delete then soft-delete DB, handle partial failure, audit MEDIA_DELETED + domain MEDIA_DELETED).
+- **Prisma MediaAsset** `backend/prisma/schema.prisma:409` — reused (id, businessId, fileName sanitized, storageKey tenant-scoped, mimeType, fileSize, width/height, altText, status active|deleted, metadata JSON, timestamps, deletedAt soft-delete, indexed businessId). No duplicate tables, SQLite+Postgres compatible. Added `storage/` to `.gitignore`.
+- **Frontend** No new UI (per spec, verify existing product/website assets); `frontend/e2e/media.spec.ts:1` added 2 tests (public storefront still shows product images, authenticated list ok / unauth 401). Existing catalog/website/inbox verified.
+- **Tests** Backend 43/43 (7 api + 11 orders + 12 payments + 13 media: upload+metadata, tenant isolation list/get/delete, auth 401, oversized 400, MIME 400, path traversal sanitized, empty 400, delete DB+storage, orphan OBJECT_MISSING, private auth/cross-tenant 403, public via slug, signed valid/invalid, tenant-scoped key opaque, no credentials leaked). Frontend 13/13 (6 critical + 3 orders API + 2 orders UI + 2 media).
+- **Builds**: `npx tsc --noEmit` both PASS, `npm run build` both PASS (backend tsc, frontend 17 routes 6.84kB with orders+media).
+- **Runtime**: backend 0.0.0.0:4000 health 200, frontend prod 0.0.0.0:3000 /dashboard/orders 200, upload via multipart verified (storage/business/{bid}/media/{mid}/{file} exists), signed URL 200, invalid sig 401, delete removes DB+file, tenant isolation verified, public private distinction verified.
+
+### Previous Increment: Payment Domain Hardening P0 — VERIFIED
 - **Payment Model** `backend/prisma/schema.prisma:657` + `migrations/20260827174042_add_payments/migration.sql` — `Payment` (id, businessId, orderId, customerId, paymentNumber PAY-xxx unique per business, amount server-derived from order.totalAmount, currency, status unpaid|pending|paid|failed|refunded, paymentMethod CASH|UPI|CARD|BANK_TRANSFER|ONLINE|OTHER, provider, providerPaymentId, transactionReference, paidAt, createdBy, idempotencyKey unique per business, timestamps). Relations to Business/Order, SQLite+Postgres compatible. Generated client v5.22.0.
 - **Payments API** `backend/src/modules/payments/payments.routes.ts:1` (new, 180 lines) + hardened `backend/src/modules/orders/orders.routes.ts:257` — POST /businesses/:id/orders/:id/payments (idempotent via Idempotency-Key header/body, amount integrity: rejects tampered amount, server derives from order, generates PAY-xxx, creates audit+domainEvent, syncs order.paymentStatus), GET /businesses/:id/payments (paginated, filtered), GET /businesses/:id/orders/:id/payments, GET /businesses/:id/payments/:id, POST /businesses/:id/payments/:id/status (explicit state machine unpaid→paid/pending/failed, pending→paid/failed, paid→refunded, invalid 422), POST /payments/:id/refund → 422 NOT_IMPLEMENTED (P0 refund not required, documented). Existing POST /orders/:id/payment hardened with idempotency and Payment record creation.
 - **Payments State Machine** `payments.routes.ts:12` — ALLOWED_PAYMENT_TRANSITIONS: unpaid→paid/pending/failed, pending→paid/failed, paid→refunded; invalid transitions 422. Payment status independent from order status (order pending while payment paid verified).
@@ -59,12 +68,13 @@ FrontDesk/
 │   │   ├── layout.tsx + globals.css
 │   ├── components/ui/{button,card,input,table,dialog,badge,toast,use-toast,...} + layout/{Sidebar,Topbar}
 │   ├── hooks/useBusiness.ts, lib/api/client.ts, providers/*, types/index.ts, config/app.ts
-│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts} + playwright.config.ts
+│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts,media.spec.ts} + playwright.config.ts
 ├── backend/
 │   ├── src/app/app.ts + plugins/auth.ts + config/env.ts
+│   ├── src/infrastructure/storage/{StorageAdapter.ts,LocalStorageAdapter.ts} (tenant-scoped, signed URLs, ₹0 dev)
 │   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments}
-│   ├── prisma/schema.prisma (Payment added) + seed.ts + migrations/20260827174042_add_payments (Order,OrderItem reused, Payment new)
-│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,helpers.ts} + vitest.config.ts
+│   ├── prisma/schema.prisma (Payment, MediaAsset) + seed.ts + migrations/20260827174042_add_payments
+│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,helpers.ts} + vitest.config.ts + storage/business/{bid}/media/{mid}/*
 ├── documentation/ (59 specs)
 ├── docker-compose.yml, README.md, MEMORY.md
 ```
@@ -80,22 +90,21 @@ FrontDesk/
 - E2E relies on prod frontend for stability; dev vendor-chunks issue tracked.
 
 ## Next Recommended (if extending)
-1. **Media object-storage adapter** (currently metadata only, file buffered in memory per `backend/src/modules/media/media.routes.ts:1`)
-2. **Switch to Postgres**: start Docker, `docker compose up -d`, update `DATABASE_URL`, change prisma provider to postgresql, re-migrate and verify production build
-3. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md`
-4. **Bookings/Appointments** per `documentation/BOOKINGS-AND-APPOINTMENTS.md` (similar vertical slice to Orders, after payments)
-5. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after hardening verified; keep provider abstraction behind PaymentService
+1. **Switch to Postgres Production Readiness**: start Docker, `docker compose up -d`, update `DATABASE_URL`, change prisma provider to postgresql, re-migrate, test fileParallelism and storage path, verify production build (per increment spec)
+2. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md`
+3. **Bookings/Appointments** per `documentation/BOOKINGS-AND-APPOINTMENTS.md` (similar vertical slice to Orders, after payments+media)
+4. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after hardening verified; keep provider abstraction behind PaymentService
 
-## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments Hardening)
-- backend: app, 14 modules, prisma, seed, config, package.json (Fastify 5) + **new**: `vitest.config.ts`, `tests/helpers.ts`, `tests/api.test.ts`, `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `src/modules/orders/orders.routes.ts` (hardened payment), `src/modules/payments/payments.routes.ts` (new, 180 lines, Payment model, idempotency, amount integrity, state machine), `prisma/schema.prisma` (+Payment), `prisma/migrations/20260827174042_add_payments/migration.sql`, `src/app/app.ts` (+paymentsRoutes)
-- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + **existing**: `app/(dashboard)/dashboard/orders/page.tsx` (hardened 6.84kB, now shows payment history, method/reference, idempotent Mark paid via new API, distinguishes Order vs Payment status), `types/index.ts` (+Order/OrderItem/+Payment), `config/app.ts` (+Orders), `components/layout/Sidebar.tsx`
-- root: .gitignore, docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
+## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media)
+- backend: app, 14 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts`, `tests/helpers.ts`, `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `src/modules/orders/orders.routes.ts` (hardened), `src/modules/payments/payments.routes.ts` (180 lines), `src/infrastructure/storage/StorageAdapter.ts` + `LocalStorageAdapter.ts` (tenant-scoped HMAC signed URLs, ₹0), `src/modules/media/media.routes.ts` (hardened 180 lines, 5MB, MIME, path traversal, public/private, signed, delete), `prisma/schema.prisma` (+Payment, MediaAsset storageKey), `prisma/migrations/20260827174042_add_payments/migration.sql`, `src/app/app.ts` (+paymentsRoutes), `storage/` added to .gitignore
+- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB with payments), `e2e/media.spec.ts` (2 new), `types/index.ts` (+Payment), `config/app.ts` (+Orders), `components/layout/Sidebar.tsx`
+- root: .gitignore (+storage, test-results), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
 
-## Verification (2026-08-27 18:15)
+## Verification (2026-08-27 18:55)
 - `npm --prefix backend run lint` PASS (tsc)
 - `npm --prefix frontend run type-check` PASS
 - `npm --prefix backend run build` PASS
 - `npm --prefix frontend run build` PASS (17 routes, orders 6.84kB)
-- `npm --prefix backend run test` 30/30 PASS (7 api + 11 orders + 12 payments)
-- `bash -c 'cd frontend && npx playwright test'` 11/11 PASS (6 critical + 3 orders API + 2 orders UI browser with hardened payments, prod 3000)
-- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/orders 200, POST /orders/:id/payments 201 amount server-derived, tampered 422, idempotent 200 same id, tenant 403, audit PAYMENT_CREATED verified, payment/order independence verified
+- `npm --prefix backend run test` 43/43 PASS (7 api + 11 orders + 12 payments + 13 media)
+- `bash -c 'cd frontend && npx playwright test'` 13/13 PASS (6 critical + 3 orders API + 2 orders UI + 2 media, prod 3000)
+- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200 (product images via public), /dashboard/orders 200, upload 201 storageKey tenant-scoped, signed URL 200, invalid sig 401, cross-tenant 403, oversized 400, MIME 400, delete DB+storage verified, public private distinction verified

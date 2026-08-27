@@ -66,6 +66,7 @@ ehthumbs.db
 .tmp/
 temp/
 uploads/
+backend/storage/
 coverage/
 .nyc_output/
 .ideavo/project
