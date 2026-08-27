@@ -292,6 +292,45 @@ export type ApprovalRequest = {
   expiresAt: string | null;
 };
 
+export type Order = {
+  id: string;
+  businessId: string;
+  customerId: string | null;
+  orderNumber: string;
+  status: "pending" | "confirmed" | "completed" | "cancelled";
+  paymentStatus: "unpaid" | "pending" | "paid" | "failed" | "refunded" | "partially_refunded" | null;
+  currency: string;
+  subtotal: number | null;
+  discountAmount: number | null;
+  taxAmount: number | null;
+  deliveryAmount: number | null;
+  totalAmount: number | null;
+  notes: string | null;
+  source: string | null;
+  createdAt: string;
+  updatedAt: string;
+  cancelledAt: string | null;
+  completedAt: string | null;
+  items: OrderItem[];
+  customer?: Customer | null;
+};
+
+export type OrderItem = {
+  id: string;
+  orderId: string;
+  productId: string | null;
+  variantId: string | null;
+  nameSnapshot: string;
+  unitPrice: number | null;
+  quantity: number;
+  discountAmount: number | null;
+  taxAmount: number | null;
+  totalAmount: number | null;
+  metadata: string | null;
+  createdAt: string;
+  product?: Product | null;
+};
+
 export type AnalyticsOverview = {
   counts: {
     products: number;

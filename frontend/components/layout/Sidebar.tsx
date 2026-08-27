@@ -7,6 +7,7 @@ import { NAVIGATION } from "@/config/app";
 import {
   Home,
   Package,
+  ShoppingBag,
   Globe,
   Inbox,
   Bot,
@@ -24,6 +25,7 @@ import { useAuth } from "@/providers/AuthProvider";
 const iconMap: Record<string, React.ElementType> = {
   Dashboard: Home,
   Catalog: Package,
+  Orders: ShoppingBag,
   Importer: Upload,
   Website: Globe,
   Inbox: Inbox,
