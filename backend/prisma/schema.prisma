@@ -122,6 +122,7 @@ model Business {
   mediaAssets MediaAsset[]
   auditLogs  AuditLog[]
   domainEvents DomainEvent[]
+  payments   Payment[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -626,6 +627,7 @@ model Order {
   completedAt   DateTime? @map("completed_at")
 
   items OrderItem[]
+  payments Payment[]
 
   @@unique([businessId, orderNumber])
   @@index([businessId, status])
@@ -650,6 +652,35 @@ model OrderItem {
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@map("order_items")
+}
+
+model Payment {
+  id                   String    @id @default(uuid())
+  businessId           String    @map("business_id")
+  orderId              String    @map("order_id")
+  customerId           String?   @map("customer_id")
+  paymentNumber        String    @map("payment_number")
+  amount               Float
+  currency             String    @default("INR")
+  status               String    @default("unpaid")
+  paymentMethod        String?   @map("payment_method")
+  provider             String?
+  providerPaymentId    String?   @map("provider_payment_id")
+  transactionReference String?   @map("transaction_reference")
+  paidAt               DateTime? @map("paid_at")
+  createdBy            String?   @map("created_by")
+  idempotencyKey       String?   @map("idempotency_key")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, paymentNumber])
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, status])
+  @@index([orderId])
+  @@map("payments")
 }
 
 // Knowledge / Memory

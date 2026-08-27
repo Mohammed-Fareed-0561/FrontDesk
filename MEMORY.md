@@ -1,10 +1,20 @@
 # FrontDesk — MEMORY.md
 
-**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 17:50 UTC
+**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 18:10 UTC
 
-## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI (2026-08-27)
+## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS HARDENING (2026-08-27)
 
-### Current Increment: Orders Frontend UI — VERIFIED
+### Current Increment: Payment Domain Hardening P0 — VERIFIED
+- **Payment Model** `backend/prisma/schema.prisma:657` + `migrations/20260827174042_add_payments/migration.sql` — `Payment` (id, businessId, orderId, customerId, paymentNumber PAY-xxx unique per business, amount server-derived from order.totalAmount, currency, status unpaid|pending|paid|failed|refunded, paymentMethod CASH|UPI|CARD|BANK_TRANSFER|ONLINE|OTHER, provider, providerPaymentId, transactionReference, paidAt, createdBy, idempotencyKey unique per business, timestamps). Relations to Business/Order, SQLite+Postgres compatible. Generated client v5.22.0.
+- **Payments API** `backend/src/modules/payments/payments.routes.ts:1` (new, 180 lines) + hardened `backend/src/modules/orders/orders.routes.ts:257` — POST /businesses/:id/orders/:id/payments (idempotent via Idempotency-Key header/body, amount integrity: rejects tampered amount, server derives from order, generates PAY-xxx, creates audit+domainEvent, syncs order.paymentStatus), GET /businesses/:id/payments (paginated, filtered), GET /businesses/:id/orders/:id/payments, GET /businesses/:id/payments/:id, POST /businesses/:id/payments/:id/status (explicit state machine unpaid→paid/pending/failed, pending→paid/failed, paid→refunded, invalid 422), POST /payments/:id/refund → 422 NOT_IMPLEMENTED (P0 refund not required, documented). Existing POST /orders/:id/payment hardened with idempotency and Payment record creation.
+- **Payments State Machine** `payments.routes.ts:12` — ALLOWED_PAYMENT_TRANSITIONS: unpaid→paid/pending/failed, pending→paid/failed, paid→refunded; invalid transitions 422. Payment status independent from order status (order pending while payment paid verified).
+- **Frontend Orders UI Hardened** `frontend/app/(dashboard)/dashboard/orders/page.tsx:329` — now distinguishes Payment vs Order status, shows payment history (paymentNumber, status, amount, method, reference), record payment form (method select, reference input, server amount display, Idempotency-Key generated per order), Mark paid now creates Payment via new API (not just order field), shows paidAt, updates order status separately.
+- **Types** `frontend/types/index.ts:315` — added `Payment` (paymentNumber, amount, currency, status, method, reference, paidAt).
+- **Tests** Backend 30/30 (7 api + 11 orders + 12 payments: correct amount, tampered 422, tenant isolation 403, auth 401, valid/invalid transitions, idempotent 200 same id, duplicate prevented, audit created, relationship integrity, independence, refund not implemented). Frontend 11/11 still pass (orders UI now uses hardened payments).
+- **Builds**: `npx tsc --noEmit` both PASS, `npm run build` both PASS (backend tsc, frontend 17 routes 6.84kB with payments UI).
+- **Runtime**: backend 0.0.0.0:4000 health 200, frontend prod 0.0.0.0:3000 /dashboard/orders 200, record payment via UI verified (UPI/CASH), idempotency verified, tenant isolation verified, amount tampering rejected, audit logs verified.
+
+### Previous Increment: Orders Frontend UI — VERIFIED
 - **Frontend Orders UI** `frontend/app/(dashboard)/dashboard/orders/page.tsx:1` (434 lines) — `/dashboard/orders` with: list (paginated 10/page, total), search by orderNumber, filters status/paymentStatus, badges for status/payment, customer/date/total, desktop table + mobile cards, empty/loading/error/skeletons, detail dialog (items with price×qty, subtotal/discount/tax/delivery/total server-calculated, customer, payment card, notes), create dialog (customer select + inline new customer name/phone, product select (active only) + qty, cart with preview subtotal, notes, server is source of truth), actions confirm/cancel/complete with confirm() dialogs, payment mark paid/unpaid. Responsive, a11y, toasts, follows catalog/inbox patterns, reuses shadcn/ui + Tailwind + apiClient + useBusiness. **Navigation** added to `frontend/config/app.ts:8` + `frontend/components/layout/Sidebar.tsx:24` (ShoppingBag icon).
 - **Types** `frontend/types/index.ts:295` — added `Order`/`OrderItem` (status, paymentStatus, currency, subtotal/total, notes, source, items).
 - **Backend** unchanged from previous increment (Orders P0 verified).
@@ -52,9 +62,9 @@ FrontDesk/
 │   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts} + playwright.config.ts
 ├── backend/
 │   ├── src/app/app.ts + plugins/auth.ts + config/env.ts
-│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders}
-│   ├── prisma/schema.prisma + seed.ts + migrations/ (Order,OrderItem reused, no duplicate)
-│   ├── tests/{api.test.ts,orders.test.ts,helpers.ts} + vitest.config.ts
+│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments}
+│   ├── prisma/schema.prisma (Payment added) + seed.ts + migrations/20260827174042_add_payments (Order,OrderItem reused, Payment new)
+│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,helpers.ts} + vitest.config.ts
 ├── documentation/ (59 specs)
 ├── docker-compose.yml, README.md, MEMORY.md
 ```
@@ -70,22 +80,22 @@ FrontDesk/
 - E2E relies on prod frontend for stability; dev vendor-chunks issue tracked.
 
 ## Next Recommended (if extending)
-1. **Payments Hardening** — add idempotency, audit, and UI for refunds/partial, then optional Razorpay mock per `documentation/PAYMENTS-AND-TRANSACTIONS.md` (do not start booking until payments stable)
-2. **Media object-storage adapter** (currently metadata only, file buffered in memory per `backend/src/modules/media/media.routes.ts:1`)
-3. **Switch to Postgres**: start Docker, `docker compose up -d`, update `DATABASE_URL`, change prisma provider to postgresql, re-migrate and verify production build
-4. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md`
-5. **Bookings/Appointments** per `documentation/BOOKINGS-AND-APPOINTMENTS.md` (similar vertical slice to Orders, after payments)
+1. **Media object-storage adapter** (currently metadata only, file buffered in memory per `backend/src/modules/media/media.routes.ts:1`)
+2. **Switch to Postgres**: start Docker, `docker compose up -d`, update `DATABASE_URL`, change prisma provider to postgresql, re-migrate and verify production build
+3. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md`
+4. **Bookings/Appointments** per `documentation/BOOKINGS-AND-APPOINTMENTS.md` (similar vertical slice to Orders, after payments)
+5. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after hardening verified; keep provider abstraction behind PaymentService
 
-## Files Changed (v0.1 + E2E + Orders + Orders UI)
-- backend: app, 13 modules, prisma, seed, config, package.json (Fastify 5) + **new**: `vitest.config.ts`, `tests/helpers.ts`, `tests/api.test.ts`, `tests/orders.test.ts` (11), `src/modules/orders/orders.routes.ts`, `prisma/test.db`, `src/config/env.ts` (dotenv fix), `src/app/app.ts` (register ordersRoutes)
-- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + **new**: `app/(dashboard)/dashboard/orders/page.tsx` (434 lines, list/pagination/search/filter/status+payment badges/customer/date/total, detail dialog with items/totals/actions, create dialog with customer+product cart), `types/index.ts` (+Order/OrderItem), `config/app.ts` (+Orders nav), `components/layout/Sidebar.tsx` (+ShoppingBag), `playwright.config.ts`, `e2e/critical-journey.spec.ts`, `e2e/orders.spec.ts` (3 API), `e2e/orders-ui.spec.ts` (2 browser), `next.config.js` (headers), package.json added `@playwright/test` + `test:e2e`
-- root: .gitignore (+ test-results, playwright-report), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config` (runStep `bash -c 'cd backend && set -a; source .env; set +a; PORT=4000 HOST=0.0.0.0 ./node_modules/.bin/tsx watch src/server.ts'`)
+## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments Hardening)
+- backend: app, 14 modules, prisma, seed, config, package.json (Fastify 5) + **new**: `vitest.config.ts`, `tests/helpers.ts`, `tests/api.test.ts`, `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `src/modules/orders/orders.routes.ts` (hardened payment), `src/modules/payments/payments.routes.ts` (new, 180 lines, Payment model, idempotency, amount integrity, state machine), `prisma/schema.prisma` (+Payment), `prisma/migrations/20260827174042_add_payments/migration.sql`, `src/app/app.ts` (+paymentsRoutes)
+- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + **existing**: `app/(dashboard)/dashboard/orders/page.tsx` (hardened 6.84kB, now shows payment history, method/reference, idempotent Mark paid via new API, distinguishes Order vs Payment status), `types/index.ts` (+Order/OrderItem/+Payment), `config/app.ts` (+Orders), `components/layout/Sidebar.tsx`
+- root: .gitignore, docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
 
-## Verification (2026-08-27 17:55)
+## Verification (2026-08-27 18:15)
 - `npm --prefix backend run lint` PASS (tsc)
 - `npm --prefix frontend run type-check` PASS
 - `npm --prefix backend run build` PASS
-- `npm --prefix frontend run build` PASS (17 routes, orders 6.04kB)
-- `npm --prefix backend run test` 18/18 PASS (7 api + 11 orders)
-- `bash -c 'cd frontend && npx playwright test'` 11/11 PASS (6 critical + 3 orders API + 2 orders UI browser, prod 3000)
-- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/orders 200, create→confirm→complete→pay via UI verified, tenant isolation verified
+- `npm --prefix frontend run build` PASS (17 routes, orders 6.84kB)
+- `npm --prefix backend run test` 30/30 PASS (7 api + 11 orders + 12 payments)
+- `bash -c 'cd frontend && npx playwright test'` 11/11 PASS (6 critical + 3 orders API + 2 orders UI browser with hardened payments, prod 3000)
+- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/orders 200, POST /orders/:id/payments 201 amount server-derived, tampered 422, idempotent 200 same id, tenant 403, audit PAYMENT_CREATED verified, payment/order independence verified

@@ -14,8 +14,8 @@ import { Separator } from "@/components/ui/separator";
 import { apiClient, apiClientRaw } from "@/lib/api/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useBusiness } from "@/hooks/useBusiness";
-import type { Product, Customer, Order } from "@/types";
-import { Search, Plus, ShoppingBag, Eye, Check, X, PackageCheck, CreditCard, User, Clock, AlertCircle, Trash2 } from "lucide-react";
+import type { Product, Customer, Order, Payment } from "@/types";
+import { Search, Plus, ShoppingBag, Eye, Check, X, PackageCheck, CreditCard, User, Clock, AlertCircle, Trash2, Receipt } from "lucide-react";
 
 function statusBadge(status: string) {
   if (status === "pending") return <Badge variant="warning">pending</Badge>;
@@ -64,6 +64,9 @@ export default function OrdersPage() {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [creating, setCreating] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [transactionRef, setTransactionRef] = useState("");
 
   const fetchOrders = async () => {
     if (!businessId) return;
@@ -165,12 +168,23 @@ export default function OrdersPage() {
     }
   };
 
+  const fetchPayments = async (orderId: string) => {
+    if (!businessId) return;
+    try {
+      const data = await apiClient<Payment[]>(`/businesses/${businessId}/orders/${orderId}/payments`);
+      setPayments(Array.isArray(data) ? data : []);
+    } catch {
+      setPayments([]);
+    }
+  };
+
   const openDetail = async (o: Order) => {
     if (!businessId) return;
     try {
       const full = await apiClient<Order>(`/businesses/${businessId}/orders/${o.id}`);
       setSelected(full);
       setShowDetail(true);
+      fetchPayments(o.id);
     } catch (e: any) {
       toast({ title: "Could not load order", description: e.message });
     }
@@ -185,7 +199,25 @@ export default function OrdersPage() {
     if (action === "confirm") { url = `/businesses/${businessId}/orders/${id}/confirm`; confirmMsg = "Confirm this order?"; }
     if (action === "cancel") { url = `/businesses/${businessId}/orders/${id}/cancel`; confirmMsg = "Cancel this order? This cannot be undone."; }
     if (action === "complete") { url = `/businesses/${businessId}/orders/${id}/complete`; confirmMsg = "Mark as completed?"; }
-    if (action === "paid" || action === "unpaid") { url = `/businesses/${businessId}/orders/${id}/payment`; body = { paymentStatus: action }; confirmMsg = `Mark payment as ${action}?`; }
+    if (action === "paid") {
+      if (!confirm(`Record payment of ₹${selected.totalAmount} via ${paymentMethod}${transactionRef ? ` ref ${transactionRef}` : ""}? Amount is server-calculated.`)) return;
+      setActionLoading(action);
+      try {
+        const idempotencyKey = `pay-${selected.id}-${Date.now()}`;
+        const payment = await apiClient<Payment>(`/businesses/${businessId}/orders/${id}/payments`, { method: "POST", body: { paymentMethod, transactionReference: transactionRef || undefined, status: "paid", idempotencyKey }, headers: { "Idempotency-Key": idempotencyKey } as any });
+        toast({ title: "Payment recorded", description: `${payment.paymentNumber} — ₹${payment.amount} ${payment.status}` });
+        const updated = await apiClient<Order>(`/businesses/${businessId}/orders/${id}`);
+        setSelected(updated);
+        fetchPayments(id);
+        fetchOrders();
+      } catch (e: any) {
+        toast({ title: "Payment failed", description: e.message });
+      } finally {
+        setActionLoading(null);
+      }
+      return;
+    }
+    if (action === "unpaid") { url = `/businesses/${businessId}/orders/${id}/payment`; body = { paymentStatus: action }; confirmMsg = `Mark payment as ${action}?`; }
     if (confirmMsg && !confirm(confirmMsg)) return;
     setActionLoading(action);
     try {
@@ -193,6 +225,7 @@ export default function OrdersPage() {
       setSelected(updated);
       toast({ title: `Order ${action}`, description: `${updated.orderNumber} is now ${action}` });
       fetchOrders();
+      if (selected) fetchPayments(selected.id);
     } catch (e: any) {
       toast({ title: "Action failed", description: e.message });
     } finally {
@@ -326,11 +359,34 @@ export default function OrdersPage() {
                   {selected.customer ? <><div className="font-medium">{selected.customer.name || "—"}</div><div className="text-muted-foreground">{selected.customer.phone || ""} {selected.customer.email || ""}</div></> : <span className="text-muted-foreground">Guest order</span>}
                   <div className="mt-2 text-xs text-muted-foreground">ID: {selected.customerId || "—"}</div>
                 </CardContent></Card>
-                <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CreditCard className="h-4 w-4" /> Payment</CardTitle></CardHeader><CardContent className="space-y-2">
-                  <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Status</span>{paymentBadge(selected.paymentStatus)}</div>
-                  <div className="flex gap-2">
-                    <Button data-testid="mark-paid-btn" size="sm" variant="outline" disabled={actionLoading === "paid" || selected.paymentStatus === "paid"} onClick={() => doAction("paid")}>{actionLoading === "paid" ? "..." : "Mark paid"}</Button>
-                    <Button data-testid="mark-unpaid-btn" size="sm" variant="ghost" disabled={actionLoading === "unpaid" || selected.paymentStatus === "unpaid"} onClick={() => doAction("unpaid")}>Mark unpaid</Button>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><CreditCard className="h-4 w-4" /> Payment — <span className="font-normal text-muted-foreground">Order {paymentBadge(selected.paymentStatus)}</span></CardTitle><CardDescription>Payment is separate from order status. Amount is server-calculated from order total.</CardDescription></CardHeader><CardContent className="space-y-3">
+                  <div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">Order payment status</span>{paymentBadge(selected.paymentStatus)}</div>
+                  <div className="rounded-md border p-3 space-y-2">
+                    <div className="text-sm font-medium flex items-center gap-2"><Receipt className="h-4 w-4" /> Record payment</div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="space-y-1"><Label className="text-xs">Method</Label><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="flex h-8 w-full rounded-md border bg-background px-2 text-xs"><option value="CASH">CASH</option><option value="UPI">UPI</option><option value="CARD">CARD</option><option value="BANK_TRANSFER">BANK_TRANSFER</option><option value="ONLINE">ONLINE</option><option value="OTHER">OTHER</option></select></div>
+                      <div className="space-y-1"><Label className="text-xs">Reference (optional)</Label><Input value={transactionRef} onChange={(e) => setTransactionRef(e.target.value)} placeholder="UPI ref / txn id" className="h-8 text-xs" /></div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">Amount: ₹{selected.totalAmount} {selected.currency} (server-calculated, cannot be edited)</div>
+                    <div className="flex gap-2">
+                      <Button data-testid="mark-paid-btn" size="sm" variant="outline" disabled={actionLoading === "paid" || selected.paymentStatus === "paid"} onClick={() => doAction("paid")}>{actionLoading === "paid" ? "..." : "Mark paid"}</Button>
+                      <Button data-testid="mark-unpaid-btn" size="sm" variant="ghost" disabled={actionLoading === "unpaid" || selected.paymentStatus === "unpaid"} onClick={() => doAction("unpaid")}>Mark unpaid</Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium">Payment history · {payments.length}</div>
+                    {payments.length === 0 ? <p className="text-xs text-muted-foreground">No payments yet. Recording a payment creates an audited record.</p> : (
+                      <div className="space-y-1 max-h-32 overflow-auto">
+                        {payments.map((p) => (
+                          <div key={p.id} className="flex items-center justify-between rounded border px-2 py-1.5 text-xs">
+                            <span className="font-mono">{p.paymentNumber}</span>
+                            <span>{paymentBadge(p.status)}</span>
+                            <span>₹{p.amount}</span>
+                            <span className="text-muted-foreground">{p.paymentMethod} {p.transactionReference ? `· ${p.transactionReference}` : ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </CardContent></Card>
               </div>

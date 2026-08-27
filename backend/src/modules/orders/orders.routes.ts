@@ -258,13 +258,65 @@ export async function ordersRoutes(app: FastifyInstance) {
     const userId = (request as any).userId as string;
     const { businessId, orderId } = request.params as any;
     await assertBusinessAccess(userId, businessId);
-    const schema = z.object({ paymentStatus: z.enum(["unpaid", "pending", "paid", "failed", "refunded", "partially_refunded"]) });
+    const schema = z.object({
+      paymentStatus: z.enum(["unpaid", "pending", "paid", "failed", "refunded", "partially_refunded"]),
+      paymentMethod: z.enum(["CASH", "UPI", "CARD", "BANK_TRANSFER", "ONLINE", "OTHER"]).optional(),
+      transactionReference: z.string().max(200).optional(),
+      idempotencyKey: z.string().max(100).optional(),
+    });
     const parsed = schema.safeParse(request.body);
     if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid paymentStatus", details: parsed.error.flatten() });
     const order = await prisma.order.findFirst({ where: { id: orderId, businessId } });
     if (!order) throw Errors.notFound("Order");
+    const headerKey = (request.headers["idempotency-key"] as string) || (request.headers["x-idempotency-key"] as string);
+    const idempotencyKey = parsed.data.idempotencyKey || headerKey || undefined;
+    if (idempotencyKey) {
+      const existing = await prisma.payment.findFirst({ where: { businessId, idempotencyKey } });
+      if (existing) {
+        const updatedOrder = await prisma.order.findFirst({ where: { id: orderId, businessId }, include: { items: true } });
+        return reply.code(200).send({ success: true, data: updatedOrder, meta: { idempotent: true } });
+      }
+    }
+    if (order.paymentStatus === parsed.data.paymentStatus) {
+      const existing = await prisma.payment.findFirst({ where: { orderId, status: parsed.data.paymentStatus } });
+      if (existing && idempotencyKey) {
+        return reply.code(200).send({ success: true, data: await prisma.order.findFirst({ where: { id: orderId }, include: { items: true } }), meta: { idempotent: true } });
+      }
+    }
     const before = { ...order };
     const updated = await prisma.order.update({ where: { id: orderId }, data: { paymentStatus: parsed.data.paymentStatus }, include: { items: true } });
+
+    if (parsed.data.paymentStatus === "paid" || parsed.data.paymentStatus === "pending") {
+      const amount = order.totalAmount ?? order.subtotal ?? 0;
+      const business = await prisma.business.findUnique({ where: { id: businessId } });
+      const currency = business?.currency || order.currency || "INR";
+      let paymentNumber: string;
+      let attempts = 0;
+      do {
+        const ts = Date.now().toString(36).toUpperCase();
+        const rnd = Math.random().toString(36).slice(2, 6).toUpperCase();
+        paymentNumber = `PAY-${ts}-${rnd}`;
+        attempts++;
+        if (attempts > 5) break;
+      } while (await prisma.payment.findUnique({ where: { businessId_paymentNumber: { businessId, paymentNumber } } } as any));
+      await prisma.payment.create({
+        data: {
+          businessId,
+          orderId,
+          customerId: order.customerId,
+          paymentNumber,
+          amount,
+          currency,
+          status: parsed.data.paymentStatus,
+          paymentMethod: parsed.data.paymentMethod || "OTHER",
+          transactionReference: parsed.data.transactionReference,
+          paidAt: parsed.data.paymentStatus === "paid" ? new Date() : null,
+          createdBy: userId,
+          idempotencyKey: idempotencyKey || null,
+        },
+      }).catch(() => {});
+    }
+
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "ORDER_PAYMENT_UPDATED", entityType: "order", entityId: orderId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) } });
     await prisma.domainEvent.create({ data: { businessId, eventType: "ORDER_PAYMENT_UPDATED", aggregateType: "order", aggregateId: orderId, payload: JSON.stringify({ orderId, paymentStatus: parsed.data.paymentStatus }) } });
     return reply.send({ success: true, data: updated });

@@ -331,6 +331,22 @@ export type OrderItem = {
   product?: Product | null;
 };
 
+export type Payment = {
+  id: string;
+  businessId: string;
+  orderId: string;
+  paymentNumber: string;
+  amount: number;
+  currency: string;
+  status: string;
+  paymentMethod: string | null;
+  provider: string | null;
+  transactionReference: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AnalyticsOverview = {
   counts: {
     products: number;
