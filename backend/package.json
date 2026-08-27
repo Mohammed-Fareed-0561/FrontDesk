@@ -23,6 +23,7 @@
     "@fastify/sensible": "^6.0.5",
     "@prisma/client": "^5.14.0",
     "bcryptjs": "^2.4.3",
+    "dotenv": "^17.4.2",
     "fastify": "^5.12.1",
     "fastify-plugin": "^5.0.1",
     "pino": "^9.3.0",

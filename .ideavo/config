@@ -54,7 +54,7 @@
   "runStep": [
     {
       "name": "Run Backend",
-      "command": "PORT=4000 HOST=0.0.0.0 npm --prefix backend run dev",
+      "command": "bash -c 'cd backend && set -a; source .env; set +a; PORT=4000 HOST=0.0.0.0 ./node_modules/.bin/tsx watch src/server.ts'",
       "port": "4000"
     },
     {
