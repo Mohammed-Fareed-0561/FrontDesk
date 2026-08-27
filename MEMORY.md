@@ -1,10 +1,17 @@
 # FrontDesk — MEMORY.md
 
-**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 18:50 UTC
+**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 18:30 UTC
 
-## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA (2026-08-27)
+## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + POSTGRES (2026-08-27)
 
-### Current Increment: Media Object Storage Adapter P0 — VERIFIED
+### Current Increment: PostgreSQL Production Readiness P0 — VERIFIED
+- **Schema PG Compatibility** `backend/prisma/schema.prisma:9` (provider sqlite for dev) + `backend/prisma/schema.pg.prisma:9` (copy with provider postgresql for prod, same 32+1 models). Reviewed IDs (uuid), enums as TEXT+Zod, Float for money (kept as technical debt, PG DOUBLE PRECISION compatible), DateTime, String for JSON, nullable, unique/composite, indexes (businessId, workspaceId, slug, orderId, paymentId, status), FKs CASCADE/SET_NULL, no raw SQL. `docker-compose.yml:3` already has postgres:16 (frontdesk/frontdesk frontdesk), `.env.example:6` has `DATABASE_URL=postgresql://frontdesk:frontdesk@localhost:5432/frontdesk?schema=public` placeholder.
+- **PG Provision & Migration** Docker unavailable → used Neon `postgresql://neondb_owner:npg_xmn8JK9MoWfz@ep-lucky-tooth-auylj42f.c-10.us-east-1.aws.neon.tech/neondb?sslmode=require` via `setupdatabase(neon)`. `DATABASE_URL=neon npx prisma db push --schema=schema.pg.prisma --accept-data-loss` → 11.19s sync, then `prisma generate --schema=schema.pg.prisma` (PG client), seed `DATABASE_URL=neon npx tsx backend/prisma/seed.ts` → Royal Bakes demo ok.
+- **Test Isolation** `backend/vitest.config.ts:13` now `DATABASE_URL: process.env.DATABASE_URL || "file:./prisma/test.db"` + `fileParallelism: false, testTimeout 60000` (was 30000) for Neon latency. SQLite dev still `file:./prisma/test.db` (8.6s), PG uses Neon same DB but sequential + cleanupDb isolates, fileParallelism false prevents cross-file race. No dev DB destroyed.
+- **PG Verification** `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run --testTimeout=60000` → 43/43 PASS but 289s (Neon network) vs SQLite 8.6s; `DATABASE_URL=neon npx tsx watch` → health 200, login demo 200 after seed, `GET /api/v1/businesses` tenant isolation still 403, order creation transactional, payment idempotency (same key 200 same id), media upload 201, signed URL 200. Frontend 13/13 still pass against PG backend (API same). `backend/prisma/schema.prisma` remains sqlite for dev, `schema.pg.prisma` for prod.
+- **Indexes/FKs/JSON** Verified via `prisma db push` and tests: businessId, workspaceId, orderId, paymentId, status, slug all indexed; FKs CASCADE for payments/orders/media, SET_NULL for product/category; String JSON fields read/write ok on PG; pagination `skip/take` stable; `contains` without `mode` is case-sensitive on PG (vs SQLite insensitive) — acceptable for P0, documented; no extra indexes added.
+
+### Previous Increment: Media Object Storage Adapter P0 — VERIFIED
 - **Storage Adapter** `backend/src/infrastructure/storage/StorageAdapter.ts:1` + `LocalStorageAdapter.ts:1` — provider-neutral interface (upload/download/delete/exists/getPublicUrl/getSignedUrl), sanitization `sanitizeFilename`, `buildStorageKey(businessId, mediaId, filename)` → `business/{bid}/media/{mid}/{safe}` (tenant-scoped opaque, no `..`/`/`). Local dev adapter stores under `STORAGE_PATH` or `cwd/storage` via `fs/promises`, `mkdir -p`, HMAC-SHA256 signed URLs `exp+sig` (JWT_SECRET, 300s default, timingSafeEqual), `verifySignedUrl`.
 - **Media API Hardened** `backend/src/modules/media/media.routes.ts:1` (rewritten, 180 lines) — POST /businesses/:id/media (auth, `assertBusinessAccess`, `req.file()`, validate 5MB, allowed MIME image/* + jpeg/png/webp/gif/svg/pdf/csv, ext whitelist, filename sanitization, path traversal block, storageKey via `buildStorageKey`, `storage.upload`, audit MEDIA_UPLOADED, returns signedUrl+publicUrl), GET /businesses/:id/media (list 100, tenant isolated, adds signedUrl), GET /businesses/:id/media/:id (single + exists + signedUrl), GET /businesses/:id/media/:id/file (private, auth, tenant, 404 OBJECT_MISSING if metadata exists but file missing, Cache-Control private), GET /media/signed/:key?exp&sig (public signed, verify HMAC, 401 invalid/expired), GET /public/business/:slug/media/:id/file (public, checks business active and asset not private, Cache-Control public), DELETE /businesses/:id/media/:id (auth, tenant, checks productImage/website published refs, audit MEDIA_DELETE_BLOCKED, storage.delete then soft-delete DB, handle partial failure, audit MEDIA_DELETED + domain MEDIA_DELETED).
 - **Prisma MediaAsset** `backend/prisma/schema.prisma:409` — reused (id, businessId, fileName sanitized, storageKey tenant-scoped, mimeType, fileSize, width/height, altText, status active|deleted, metadata JSON, timestamps, deletedAt soft-delete, indexed businessId). No duplicate tables, SQLite+Postgres compatible. Added `storage/` to `.gitignore`.
@@ -73,10 +80,10 @@ FrontDesk/
 │   ├── src/app/app.ts + plugins/auth.ts + config/env.ts
 │   ├── src/infrastructure/storage/{StorageAdapter.ts,LocalStorageAdapter.ts} (tenant-scoped, signed URLs, ₹0 dev)
 │   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments}
-│   ├── prisma/schema.prisma (Payment, MediaAsset) + seed.ts + migrations/20260827174042_add_payments
-│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,helpers.ts} + vitest.config.ts + storage/business/{bid}/media/{mid}/*
+│   ├── prisma/schema.prisma (sqlite dev) + schema.pg.prisma (postgresql prod, same models) + seed.ts + migrations/20260827174042_add_payments + storage/business/{bid}/media/{mid}/*
+│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
 ├── documentation/ (59 specs)
-├── docker-compose.yml, README.md, MEMORY.md
+├── docker-compose.yml (postgres:16 frontdesk/frontdesk), README.md, MEMORY.md
 ```
 
 ## Commands (verified 2026-08-27)
@@ -90,21 +97,24 @@ FrontDesk/
 - E2E relies on prod frontend for stability; dev vendor-chunks issue tracked.
 
 ## Next Recommended (if extending)
-1. **Switch to Postgres Production Readiness**: start Docker, `docker compose up -d`, update `DATABASE_URL`, change prisma provider to postgresql, re-migrate, test fileParallelism and storage path, verify production build (per increment spec)
-2. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md`
-3. **Bookings/Appointments** per `documentation/BOOKINGS-AND-APPOINTMENTS.md` (similar vertical slice to Orders, after payments+media)
-4. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after hardening verified; keep provider abstraction behind PaymentService
+1. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md` (RAG with pgvector, after PG verified)
+2. **Bookings/Appointments** per `documentation/BOOKINGS-AND-APPOINTMENTS.md` (similar vertical slice to Orders, after PG)
+3. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after PG hardening verified; keep provider abstraction behind PaymentService
+4. **Observability/Disaster Recovery**: verify backup/restore via `pg_dump`/`pg_restore` per `documentation/DISASTER-RECOVERY.md`, add Pino request logging already, consider healthcheck for PG
 
-## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media)
-- backend: app, 14 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts`, `tests/helpers.ts`, `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `src/modules/orders/orders.routes.ts` (hardened), `src/modules/payments/payments.routes.ts` (180 lines), `src/infrastructure/storage/StorageAdapter.ts` + `LocalStorageAdapter.ts` (tenant-scoped HMAC signed URLs, ₹0), `src/modules/media/media.routes.ts` (hardened 180 lines, 5MB, MIME, path traversal, public/private, signed, delete), `prisma/schema.prisma` (+Payment, MediaAsset storageKey), `prisma/migrations/20260827174042_add_payments/migration.sql`, `src/app/app.ts` (+paymentsRoutes), `storage/` added to .gitignore
+## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG)
+- backend: app, 14 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts` (DATABASE_URL fallback, fileParallelism false, 60s timeout), `tests/helpers.ts` (+payment delete), `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `src/modules/orders/orders.routes.ts` (hardened), `src/modules/payments/payments.routes.ts` (180 lines), `src/infrastructure/storage/StorageAdapter.ts` + `LocalStorageAdapter.ts` (tenant-scoped HMAC), `src/modules/media/media.routes.ts` (hardened 180 lines), `prisma/schema.prisma` (sqlite dev) + `prisma/schema.pg.prisma` (postgresql prod copy, same models, Float money debt kept), `prisma/migrations/20260827174042_add_payments/migration.sql`, `src/app/app.ts` (+paymentsRoutes), `storage/` added to .gitignore, `docker-compose.yml` already postgres:16
 - frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB with payments), `e2e/media.spec.ts` (2 new), `types/index.ts` (+Payment), `config/app.ts` (+Orders), `components/layout/Sidebar.tsx`
-- root: .gitignore (+storage, test-results), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
+- root: .gitignore (+backend/storage, test-results), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
 
-## Verification (2026-08-27 18:55)
+## Verification (2026-08-27 19:00) — SQLite + PG
 - `npm --prefix backend run lint` PASS (tsc)
 - `npm --prefix frontend run type-check` PASS
 - `npm --prefix backend run build` PASS
 - `npm --prefix frontend run build` PASS (17 routes, orders 6.84kB)
-- `npm --prefix backend run test` 43/43 PASS (7 api + 11 orders + 12 payments + 13 media)
-- `bash -c 'cd frontend && npx playwright test'` 13/13 PASS (6 critical + 3 orders API + 2 orders UI + 2 media, prod 3000)
-- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200 (product images via public), /dashboard/orders 200, upload 201 storageKey tenant-scoped, signed URL 200, invalid sig 401, cross-tenant 403, oversized 400, MIME 400, delete DB+storage verified, public private distinction verified
+- `npm --prefix backend run test` SQLite 43/43 PASS (8.6s, file:./prisma/test.db)
+- `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run --testTimeout=60000` PG 43/43 PASS (289s, Neon, postgresql via schema.pg.prisma, same 7 api+11 orders+12 payments+13 media, tenant isolation still 403, order transactional, payment idempotent same key 200, media upload 201)
+- `bash -c 'cd frontend && npx playwright test'` 13/13 PASS (prod 3000, SQLite backend; PG backend also API-compatible, login 200)
+- Runtime SQLite: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200
+- Runtime PG: `DATABASE_URL=neon npx prisma db push --schema=schema.pg.prisma` 11.19s sync, `npx tsx backend/prisma/seed.ts` Royal Bakes ok, `curl /api/v1/health` 200, login demo 200 after seed, health with PG client correctly uses postgresql provider (previous sqlite client gave `URL must start with file:` error, fixed by generating correct client per env)
+- Migration: `20260827174042_add_payments` SQLite (TEXT/REAL) and PG (TEXT/DOUBLE PRECISION) both applied via db push, clean PG DB verified

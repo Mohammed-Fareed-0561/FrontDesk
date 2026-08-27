@@ -66,6 +66,7 @@ ehthumbs.db
 .tmp/
 temp/
 uploads/
+/storage/
 backend/storage/
 coverage/
 .nyc_output/
