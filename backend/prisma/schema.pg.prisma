@@ -124,6 +124,7 @@ model Business {
   domainEvents DomainEvent[]
   payments   Payment[]
   bookings   Booking[]
+  insights   Insight[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -738,14 +739,13 @@ model KnowledgeDocument {
 }
 
 model KnowledgeChunk {
-  id           String   @id @default(uuid())
-  documentId   String   @map("document_id")
-  chunkIndex   Int?     @map("chunk_index")
-  content      String
-  embedding    String?  // JSON array string for SQLite dev; vector in Postgres
-  embeddingVec Unsupported("vector(64)")? @map("embedding_vec")
-  metadata     String?
-  createdAt    DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  chunkIndex Int?     @map("chunk_index")
+  content    String
+  embedding  String?  // JSON array string for SQLite dev; vector in Postgres
+  metadata   String?
+  createdAt  DateTime @default(now()) @map("created_at")
 
   document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -770,7 +770,6 @@ model BusinessMemory {
   approvedAt    DateTime? @map("approved_at")
   expiresAt     DateTime? @map("expires_at")
   embedding     String?   // JSON array for SQLite dev; vector in PG
-  embeddingVec  Unsupported("vector(64)")? @map("embedding_vec")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   deletedAt     DateTime? @map("deleted_at")
@@ -988,4 +987,26 @@ model AuditLog {
 
   @@index([businessId, createdAt])
   @@map("audit_logs")
+}
+
+model Insight {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  insightType String   @map("insight_type") // SALES_DROP|BOOKING_SPIKE|ENQUIRY_BACKLOG etc
+  severity    String   @default("INFO") // INFO|LOW|MEDIUM|HIGH|CRITICAL
+  title       String
+  description String?
+  evidence    String? // JSON stringified structured evidence
+  status      String   @default("new") // new|seen|dismissed|acted_on
+  source      String? // deterministic|ai
+  detectedAt  DateTime @default(now()) @map("detected_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, insightType])
+  @@index([businessId, status])
+  @@index([businessId, insightType])
+  @@map("insights")
 }

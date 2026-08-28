@@ -6,10 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { apiClient } from "@/lib/api/client";
+import { apiClient, apiClientRaw } from "@/lib/api/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useBusiness } from "@/hooks/useBusiness";
-import { Bot, Send, Sparkles, CheckCircle2, AlertCircle, ArrowRight, Wand2 } from "lucide-react";
+import { Bot, Send, Sparkles, CheckCircle2, AlertCircle, ArrowRight, Wand2, Lightbulb, TrendingDown, Inbox, CalendarX } from "lucide-react";
 
 type Msg = { role: "user" | "assistant"; content: string; actions?: any[]; at: string };
 
@@ -29,6 +29,8 @@ export default function CopilotPage() {
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<Msg[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
+  const [insights, setInsights] = useState<any[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
 
   const scroll = () => endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -40,6 +42,51 @@ export default function CopilotPage() {
   useEffect(() => {
     if (!businessId) return;
     apiClient<any[]>(`/businesses/${businessId}/approvals`).then(setApprovals).catch(() => {});
+  }, [businessId]);
+
+  const fetchInsights = async () => {
+    if (!businessId) return;
+    setInsightsLoading(true);
+    try {
+      const data = await apiClient<any[]>(`/businesses/${businessId}/insights`);
+      setInsights(Array.isArray(data) ? data : []);
+    } catch {
+      setInsights([]);
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
+  const handleRefreshInsights = async () => {
+    if (!businessId) return;
+    setInsightsLoading(true);
+    try {
+      const res = await apiClient<any>(`/businesses/${businessId}/insights/refresh`, { method: "POST" });
+      toast({ title: `Refreshed`, description: `${res.signals?.length || 0} new signals` });
+      fetchInsights();
+    } catch (e: any) {
+      toast({ title: "Could not refresh", description: e.message });
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
+  const handleSeen = async (id: string) => {
+    if (!businessId) return;
+    await apiClient(`/businesses/${businessId}/insights/${id}/seen`, { method: "POST" }).catch(() => {});
+    fetchInsights();
+  };
+
+  const handleDismiss = async (id: string) => {
+    if (!businessId) return;
+    await apiClient(`/businesses/${businessId}/insights/${id}/dismiss`, { method: "POST" }).catch(() => {});
+    toast({ title: "Dismissed" });
+    fetchInsights();
+  };
+
+  useEffect(() => {
+    if (!businessId) return;
+    fetchInsights();
   }, [businessId]);
 
   const handleSend = async (text?: string) => {
@@ -83,10 +130,57 @@ export default function CopilotPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Bot className="h-6 w-6" /> Copilot</h1>
-        <p className="text-muted-foreground">Your business assistant — it knows your catalog, enquiries and website. Ask in plain English.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Bot className="h-6 w-6" /> Copilot</h1>
+          <p className="text-muted-foreground">Your business assistant — it knows your catalog, enquiries and website. Ask in plain English.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleRefreshInsights} disabled={insightsLoading}>{insightsLoading ? "..." : "Refresh insights"}</Button>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><Lightbulb className="h-4 w-4" /> Today&apos;s overview <Badge variant="secondary">{insights.filter((i) => i.status === "new").length} new</Badge></CardTitle>
+          <CardDescription>Deterministic signals from your business data, explained by AI. Tenant-scoped, not hallucinated.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {insightsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading insights…</p>
+          ) : insights.length === 0 ? (
+            <div className="py-6 text-center">
+              <p className="text-sm text-muted-foreground">No important signals today. All clear.</p>
+              <p className="text-xs text-muted-foreground">We check orders, bookings and enquiries for meaningful changes.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {insights.slice(0, 5).map((ins) => (
+                <div key={ins.id} className="rounded-md border p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{ins.title}</span>
+                        <Badge variant={ins.severity === "HIGH" || ins.severity === "CRITICAL" ? "destructive" : ins.severity === "MEDIUM" ? "warning" : "secondary"}>{ins.severity}</Badge>
+                        <Badge variant="outline">{ins.insightType}</Badge>
+                        <Badge variant={ins.status === "new" ? "success" : "outline"}>{ins.status}</Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{ins.description}</div>
+                      {ins.evidence && (
+                        <pre className="mt-2 max-h-20 overflow-auto rounded bg-muted p-2 text-xs">{ins.evidence}</pre>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-1">Why it matters: {ins.insightType === "SALES_DROP" ? "Sales are a core business fact; a drop may indicate demand or availability." : ins.insightType === "ENQUIRY_BACKLOG" ? "Open enquiries need timely replies." : "Review the evidence and consider next steps."}</div>
+                      <div className="text-xs text-muted-foreground">Recommended: {ins.insightType === "SALES_DROP" ? "Review recent enquiries and product availability." : ins.insightType === "ENQUIRY_BACKLOG" ? "Check inbox for oldest unanswered." : "Review and decide."}</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    {ins.status === "new" && <Button size="sm" variant="outline" onClick={() => handleSeen(ins.id)}>Mark seen</Button>}
+                    <Button size="sm" variant="ghost" onClick={() => handleDismiss(ins.id)}>Dismiss</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2 flex flex-col min-h-[560px]">

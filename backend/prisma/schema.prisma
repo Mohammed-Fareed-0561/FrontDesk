@@ -124,6 +124,7 @@ model Business {
   domainEvents DomainEvent[]
   payments   Payment[]
   bookings   Booking[]
+  insights   Insight[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -986,4 +987,26 @@ model AuditLog {
 
   @@index([businessId, createdAt])
   @@map("audit_logs")
+}
+
+model Insight {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  insightType String   @map("insight_type") // SALES_DROP|BOOKING_SPIKE|ENQUIRY_BACKLOG etc
+  severity    String   @default("INFO") // INFO|LOW|MEDIUM|HIGH|CRITICAL
+  title       String
+  description String?
+  evidence    String? // JSON stringified structured evidence
+  status      String   @default("new") // new|seen|dismissed|acted_on
+  source      String? // deterministic|ai
+  detectedAt  DateTime @default(now()) @map("detected_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, insightType])
+  @@index([businessId, status])
+  @@index([businessId, insightType])
+  @@map("insights")
 }
