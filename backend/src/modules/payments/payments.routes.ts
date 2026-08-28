@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
+import { emitAndDispatch } from "../automations/hook.js";
 import { parsePagination } from "../../shared/utils/pagination.js";
 
 async function assertBusinessAccess(userId: string, businessId: string) {

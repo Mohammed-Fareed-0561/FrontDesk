@@ -16,6 +16,7 @@ export const NAVIGATION = {
     { label: "Website", href: "/dashboard/website" },
     { label: "Inbox", href: "/dashboard/inbox" },
     { label: "Insights", href: "/dashboard/insights" },
+    { label: "Automations", href: "/dashboard/automations" },
     { label: "Copilot", href: "/dashboard/copilot" },
     { label: "Activity", href: "/dashboard/activity" },
     { label: "Settings", href: "/dashboard/settings" },

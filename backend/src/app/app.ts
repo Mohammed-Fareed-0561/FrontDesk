@@ -24,6 +24,7 @@ import { bookingsRoutes } from "../modules/bookings/bookings.routes.js";
 import { servicesRoutes } from "../modules/services/services.routes.js";
 import { knowledgeRoutes } from "../modules/knowledge/knowledge.routes.js";
 import { insightsRoutes } from "../modules/insights/insights.routes.js";
+import { automationsRoutes } from "../modules/automations/automations.routes.js";
 import { AppError } from "../shared/errors/AppError.js";
 
 export async function buildApp() {
@@ -89,6 +90,7 @@ export async function buildApp() {
   await app.register(servicesRoutes);
   await app.register(knowledgeRoutes);
   await app.register(insightsRoutes);
+  await app.register(automationsRoutes);
 
   // 404
   app.setNotFoundHandler((req, reply) => {

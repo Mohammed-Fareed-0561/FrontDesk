@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
+import { emitAndDispatch } from "../automations/hook.js";
 import { parsePagination } from "../../shared/utils/pagination.js";
 
 async function assertBusinessAccess(userId: string, businessId: string) {
@@ -56,7 +57,7 @@ export async function enquiriesRoutes(app: FastifyInstance) {
     let conversation = await prisma.conversation.create({ data: { businessId, customerId, channel: parsed.data.source || "website", status: "open", lastMessageAt: new Date() } });
     await prisma.message.create({ data: { conversationId: conversation.id, senderType: "customer", senderId: customerId, content: parsed.data.message, messageType: "text" } });
     const enquiry = await prisma.enquiry.create({ data: { businessId, customerId, conversationId: conversation.id, subject: parsed.data.subject, message: parsed.data.message, status: "new", priority: parsed.data.priority || "medium", source: parsed.data.source || "website" } });
-    await prisma.domainEvent.create({ data: { businessId, eventType: "ENQUIRY_CREATED", aggregateType: "enquiry", aggregateId: enquiry.id, payload: JSON.stringify(enquiry) } });
+    await emitAndDispatch({ businessId, eventType: "ENQUIRY_CREATED", aggregateType: "enquiry", aggregateId: enquiry.id, payload: JSON.stringify(enquiry) });
     return reply.code(201).send({ success: true, data: enquiry });
   });
 
@@ -78,7 +79,7 @@ export async function enquiriesRoutes(app: FastifyInstance) {
     const conv = await prisma.conversation.create({ data: { businessId: business.id, customerId: customer.id, channel: "website", status: "open", lastMessageAt: new Date() } });
     await prisma.message.create({ data: { conversationId: conv.id, senderType: "customer", senderId: customer.id, content: parsed.data.message } });
     const enquiry = await prisma.enquiry.create({ data: { businessId: business.id, customerId: customer.id, conversationId: conv.id, subject: parsed.data.subject, message: parsed.data.message, status: "new", source: "public_website" } });
-    await prisma.domainEvent.create({ data: { businessId: business.id, eventType: "ENQUIRY_CREATED", aggregateType: "enquiry", aggregateId: enquiry.id, payload: JSON.stringify(enquiry) } });
+    await emitAndDispatch({ businessId: business.id, eventType: "ENQUIRY_CREATED", aggregateType: "enquiry", aggregateId: enquiry.id, payload: JSON.stringify(enquiry) });
     return reply.code(201).send({ success: true, data: { id: enquiry.id, message: "Enquiry received. We'll contact you soon." } });
   });
 

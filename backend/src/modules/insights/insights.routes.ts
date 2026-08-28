@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
+import { emitAndDispatch } from "../automations/hook.js";
 import { aiService } from "../../infrastructure/ai/AIService.js";
 import { retrieveKnowledge } from "../knowledge/retrieval.js";
 import { buildBusinessContext } from "./context.js";
@@ -63,9 +64,7 @@ async function upsertInsight(businessId: string, signal: any) {
   await prisma.auditLog.create({
     data: { businessId, actorType: "system", action: "INSIGHT_CREATED", entityType: "insight", entityId: insight.id, afterData: JSON.stringify(insight) },
   });
-  await prisma.domainEvent.create({
-    data: { businessId, eventType: "INSIGHT_CREATED", aggregateType: "insight", aggregateId: insight.id, payload: JSON.stringify({ insightId: insight.id, type: signal.insightType }) },
-  });
+  await emitAndDispatch({ businessId, eventType: "INSIGHT_CREATED", aggregateType: "insight", aggregateId: insight.id, payload: JSON.stringify({ insightId: insight.id, type: signal.insightType }) });
   return insight;
 }
 

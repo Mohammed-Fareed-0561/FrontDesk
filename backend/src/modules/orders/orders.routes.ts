@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
+import { emitAndDispatch } from "../automations/hook.js";
 import { parsePagination } from "../../shared/utils/pagination.js";
 
 async function assertBusinessAccess(userId: string, businessId: string) {
@@ -157,7 +158,7 @@ export async function ordersRoutes(app: FastifyInstance) {
     });
 
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "ORDER_CREATED", entityType: "order", entityId: result.id, afterData: JSON.stringify(result) } });
-    await prisma.domainEvent.create({ data: { businessId, eventType: "ORDER_CREATED", aggregateType: "order", aggregateId: result.id, payload: JSON.stringify({ orderId: result.id, orderNumber: result.orderNumber }) } });
+    await emitAndDispatch({ businessId, eventType: "ORDER_CREATED", aggregateType: "order", aggregateId: result.id, payload: JSON.stringify({ orderId: result.id, orderNumber: result.orderNumber }) });
 
     return reply.code(201).send({ success: true, data: result });
   });

@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
+import { emitAndDispatch } from "../automations/hook.js";
 import { parsePagination } from "../../shared/utils/pagination.js";
 
 async function assertBusinessAccess(userId: string, businessId: string) {
@@ -138,7 +139,7 @@ export async function bookingsRoutes(app: FastifyInstance) {
     });
 
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "BOOKING_CREATED", entityType: "booking", entityId: booking.id, afterData: JSON.stringify(booking) } });
-    await prisma.domainEvent.create({ data: { businessId, eventType: "BOOKING_CREATED", aggregateType: "booking", aggregateId: booking.id, payload: JSON.stringify({ bookingId: booking.id, bookingNumber }) } });
+    await emitAndDispatch({ businessId, eventType: "BOOKING_CREATED", aggregateType: "booking", aggregateId: booking.id, payload: JSON.stringify({ bookingId: booking.id, bookingNumber }) });
 
     return reply.code(201).send({ success: true, data: booking });
   });
@@ -250,7 +251,7 @@ export async function bookingsRoutes(app: FastifyInstance) {
     const before = { ...booking };
     const updated = await prisma.booking.update({ where: { id: bookingId }, data, include: { customer: true, service: true } });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: `BOOKING_${target.toUpperCase()}`, entityType: "booking", entityId: bookingId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) } });
-    await prisma.domainEvent.create({ data: { businessId, eventType: `BOOKING_${target.toUpperCase()}`, aggregateType: "booking", aggregateId: bookingId, payload: JSON.stringify({ bookingId, target }) } });
+    await emitAndDispatch({ businessId, eventType: `BOOKING_${target.toUpperCase()}`, aggregateType: "booking", aggregateId: bookingId, payload: JSON.stringify({ bookingId, target }) });
     return updated;
   }
 
