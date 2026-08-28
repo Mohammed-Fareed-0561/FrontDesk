@@ -10,7 +10,7 @@ export default defineConfig({
     sequence: { concurrent: false },
     fileParallelism: false,
     env: {
-      DATABASE_URL: process.env.DATABASE_URL || "file:/home/user/project/backend/prisma/test.db",
+      DATABASE_URL: process.env.DATABASE_URL || "file:./dev.db",
       JWT_SECRET: "test_jwt_secret_32chars_min_for_vitest",
       JWT_EXPIRES_IN: "7d",
       CORS_ORIGIN: "*",

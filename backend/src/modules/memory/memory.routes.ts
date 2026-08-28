@@ -97,6 +97,15 @@ export async function memoryRoutes(app: FastifyInstance) {
     };
 
     const m = await prisma.businessMemory.create({ data });
+    const isPgWrite = (process.env.DATABASE_URL || "").startsWith("postgresql");
+    if (isPgWrite) {
+      const vec = `[${embedding.join(",")}]`;
+      await prisma.$executeRawUnsafe(
+        `UPDATE "business_memories" SET "embedding_vec" = $1::vector WHERE "id" = $2`,
+        vec,
+        m.id
+      );
+    }
     await prisma.memoryEvent.create({ data: { memoryId: m.id, eventType: "created", newValue: JSON.stringify(m), actorType: "user", actorId: userId } });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "MEMORY_CREATED", entityType: "memory", entityId: m.id, afterData: JSON.stringify(m) } });
     await prisma.domainEvent.create({ data: { businessId, eventType: "MEMORY_CREATED", aggregateType: "memory", aggregateId: m.id, payload: JSON.stringify({ memoryId: m.id, scope: m.scope }) } });
@@ -124,11 +133,20 @@ export async function memoryRoutes(app: FastifyInstance) {
     const before = { ...existing };
     const updateData: any = { ...parsed.data };
     if (parsed.data.expiresAt !== undefined) updateData.expiresAt = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null;
+    let newEmb: number[] | null = null;
     if (parsed.data.content) {
-      const emb = await mockEmbedding.embed(parsed.data.content);
-      updateData.embedding = JSON.stringify(emb);
+      newEmb = await mockEmbedding.embed(parsed.data.content);
+      updateData.embedding = JSON.stringify(newEmb);
     }
     const updated = await prisma.businessMemory.update({ where: { id: memoryId }, data: updateData });
+    if (newEmb && (process.env.DATABASE_URL || "").startsWith("postgresql")) {
+      const vec = `[${newEmb.join(",")}]`;
+      await prisma.$executeRawUnsafe(
+        `UPDATE "business_memories" SET "embedding_vec" = $1::vector WHERE "id" = $2`,
+        vec,
+        memoryId
+      );
+    }
     await prisma.memoryEvent.create({ data: { memoryId, eventType: "updated", oldValue: JSON.stringify(before), newValue: JSON.stringify(updated), actorType: "user", actorId: userId } });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "MEMORY_UPDATED", entityType: "memory", entityId: memoryId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) } });
     if (parsed.data.content && before.content !== parsed.data.content) {
@@ -168,32 +186,26 @@ export async function memoryRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid", details: parsed.error.flatten() });
     const isPg = (process.env.DATABASE_URL || "").startsWith("postgresql");
     if (isPg) {
-      try {
-        const queryEmb = await mockEmbedding.embed(parsed.data.query);
-        const vectorStr = `[${queryEmb.join(",")}]`;
-        let whereScope = "";
-        const params: any[] = [vectorStr, businessId];
-        let idx = 3;
-        if (parsed.data.scope) {
-          whereScope += ` AND bm."scope" = $${idx++}`;
-          params.push(parsed.data.scope);
-        }
-        if (parsed.data.scopeEntityId) {
-          whereScope += ` AND bm."scope_entity_id" = $${idx++}`;
-          params.push(parsed.data.scopeEntityId);
-        }
-        params.push(parsed.data.topK);
-        const rows: any[] = await prisma.$queryRawUnsafe(
-          `SELECT bm."id", bm."content", bm."scope", bm."scope_entity_id" as "scopeEntityId", bm."priority", bm."status", bm."created_at" as "createdAt", (bm."embedding_vec" <=> $1::vector) as "distance" FROM "business_memories" bm WHERE bm."business_id" = $2 AND bm."deleted_at" IS NULL AND bm."status" = 'active' AND bm."embedding_vec" IS NOT NULL ${whereScope} ORDER BY bm."embedding_vec" <=> $1::vector LIMIT $${idx}`,
-          ...params
-        );
-        if (rows.length > 0) {
-          const result = rows.map((r) => ({ id: r.id, content: r.content, scope: r.scope, scopeEntityId: r.scopeEntityId, priority: r.priority, status: r.status, score: 1 - Number(r.distance), provenance: { memoryId: r.id, scope: r.scope, scopeEntityId: r.scopeEntityId } })).filter((s) => s.score > 0.05);
-          return reply.send({ success: true, data: result });
-        }
-      } catch (e) {
-        console.warn("pgvector memory search failed, fallback", e);
+      const queryEmb = await mockEmbedding.embed(parsed.data.query);
+      const vectorStr = `[${queryEmb.join(",")}]`;
+      let whereScope = "";
+      const params: any[] = [vectorStr, businessId];
+      let idx = 3;
+      if (parsed.data.scope) {
+        whereScope += ` AND bm."scope" = $${idx++}`;
+        params.push(parsed.data.scope);
       }
+      if (parsed.data.scopeEntityId) {
+        whereScope += ` AND bm."scope_entity_id" = $${idx++}`;
+        params.push(parsed.data.scopeEntityId);
+      }
+      params.push(parsed.data.topK);
+      const rows: any[] = await prisma.$queryRawUnsafe(
+        `SELECT bm."id", bm."content", bm."scope", bm."scope_entity_id" as "scopeEntityId", bm."priority", bm."status", bm."created_at" as "createdAt", (bm."embedding_vec" <=> $1::vector) as "distance" FROM "business_memories" bm WHERE bm."business_id" = $2 AND bm."deleted_at" IS NULL AND bm."status" = 'active' AND bm."embedding_vec" IS NOT NULL ${whereScope} ORDER BY bm."embedding_vec" <=> $1::vector LIMIT $${idx}`,
+        ...params
+      );
+      const result = rows.map((r) => ({ id: r.id, content: r.content, scope: r.scope, scopeEntityId: r.scopeEntityId, priority: r.priority, status: r.status, score: 1 - Number(r.distance), provenance: { memoryId: r.id, scope: r.scope, scopeEntityId: r.scopeEntityId } })).filter((s) => s.score > 0.05);
+      return reply.send({ success: true, data: result });
     }
     const where: any = { businessId, deletedAt: null, status: "active" };
     if (parsed.data.scope) where.scope = parsed.data.scope;
@@ -229,6 +241,14 @@ export async function memoryRoutes(app: FastifyInstance) {
     const emb = await mockEmbedding.embed(parsed.data.content);
     const data: any = { businessId, content: parsed.data.content, memoryType: existing.memoryType, scope: existing.scope, scopeEntityId: existing.scopeEntityId, priority: existing.priority, source: "OWNER", status: "active", createdBy: userId, embedding: JSON.stringify(emb) };
     const created = await prisma.businessMemory.create({ data });
+    if ((process.env.DATABASE_URL || "").startsWith("postgresql")) {
+      const vec = `[${emb.join(",")}]`;
+      await prisma.$executeRawUnsafe(
+        `UPDATE "business_memories" SET "embedding_vec" = $1::vector WHERE "id" = $2`,
+        vec,
+        created.id
+      );
+    }
     await prisma.memoryEvent.create({ data: { memoryId: created.id, eventType: "created", newValue: JSON.stringify(created), actorType: "user", actorId: userId } });
     await prisma.memoryEvent.create({ data: { memoryId, eventType: "superseded", oldValue: JSON.stringify(existing), newValue: JSON.stringify({ status: "superseded" }), actorType: "user", actorId: userId } });
     return reply.send({ success: true, data: created });

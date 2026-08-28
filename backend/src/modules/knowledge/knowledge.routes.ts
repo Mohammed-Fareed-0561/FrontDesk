@@ -73,8 +73,15 @@ export async function knowledgeRoutes(app: FastifyInstance) {
         embedding: JSON.stringify(embeddings[i]),
         metadata: JSON.stringify({ businessId, sourceType: parsed.data.sourceType, sourceId: doc.id, chunkIndex: i }),
       };
-      if (isPg) data.embeddingVec = `[${embeddings[i].join(",")}]` as any;
-      await prisma.knowledgeChunk.create({ data });
+      const created = await prisma.knowledgeChunk.create({ data });
+      if (isPg) {
+        const vec = `[${embeddings[i].join(",")}]`;
+        await prisma.$executeRawUnsafe(
+          `UPDATE "knowledge_chunks" SET "embedding_vec" = $1::vector WHERE "id" = $2`,
+          vec,
+          created.id
+        );
+      }
     }
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "KNOWLEDGE_CREATED", entityType: "knowledge", entityId: doc.id, afterData: JSON.stringify({ title: doc.title, chunks: chunks.length }) } });
     const withChunks = await prisma.knowledgeDocument.findUnique({ where: { id: doc.id }, include: { chunks: true } });
@@ -122,8 +129,15 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     const isPgReindex = (process.env.DATABASE_URL || "").startsWith("postgresql");
     for (let i = 0; i < chunks.length; i++) {
       const data: any = { documentId: knowledgeId, chunkIndex: i, content: chunks[i], embedding: JSON.stringify(embeddings[i]), metadata: JSON.stringify({ businessId, chunkIndex: i }) };
-      if (isPgReindex) data.embeddingVec = `[${embeddings[i].join(",")}]` as any;
-      await prisma.knowledgeChunk.create({ data });
+      const created = await prisma.knowledgeChunk.create({ data });
+      if (isPgReindex) {
+        const vec = `[${embeddings[i].join(",")}]`;
+        await prisma.$executeRawUnsafe(
+          `UPDATE "knowledge_chunks" SET "embedding_vec" = $1::vector WHERE "id" = $2`,
+          vec,
+          created.id
+        );
+      }
     }
     const updated = await prisma.knowledgeDocument.findUnique({ where: { id: knowledgeId }, include: { chunks: true } });
     return reply.send({ success: true, data: updated });

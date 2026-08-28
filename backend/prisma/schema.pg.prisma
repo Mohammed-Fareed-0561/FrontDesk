@@ -739,16 +739,18 @@ model KnowledgeDocument {
 }
 
 model KnowledgeChunk {
-  id         String   @id @default(uuid())
-  documentId String   @map("document_id")
-  chunkIndex Int?     @map("chunk_index")
-  content    String
-  embedding  String?  // JSON array string for SQLite dev; vector in Postgres
-  metadata   String?
-  createdAt  DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  documentId   String   @map("document_id")
+  chunkIndex   Int?     @map("chunk_index")
+  content      String
+  embedding    String?  // JSON array string for SQLite dev; vector in Postgres
+  embeddingVec Unsupported("vector(64)")? @map("embedding_vec")
+  metadata     String?
+  createdAt    DateTime @default(now()) @map("created_at")
 
   document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
+  @@index([embeddingVec], type: Hnsw, ops: VectorCosineOps, map: "idx_knowledge_chunks_embedding_vec")
   @@map("knowledge_chunks")
 }
 
@@ -770,6 +772,7 @@ model BusinessMemory {
   approvedAt    DateTime? @map("approved_at")
   expiresAt     DateTime? @map("expires_at")
   embedding     String?   // JSON array for SQLite dev; vector in PG
+  embeddingVec  Unsupported("vector(64)")? @map("embedding_vec")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   deletedAt     DateTime? @map("deleted_at")
@@ -777,6 +780,7 @@ model BusinessMemory {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   events   MemoryEvent[]
 
+  @@index([embeddingVec], type: Hnsw, ops: VectorCosineOps, map: "idx_business_memories_embedding_vec")
   @@index([businessId])
   @@index([businessId, status])
   @@index([businessId, scope])
