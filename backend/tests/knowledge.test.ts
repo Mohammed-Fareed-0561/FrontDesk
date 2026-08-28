@@ -85,7 +85,6 @@ describe("Knowledge Base + RAG — P0", () => {
     await app.inject({ method: "POST", url: `/api/v1/businesses/${bizB.id}/knowledge`, headers: { authorization: `Bearer ${b.token}` }, payload: { title: "Secret B", content: "Secret B refund policy 7 days" } });
     const resA = await app.inject({ method: "POST", url: `/api/v1/businesses/${bizA.id}/knowledge/search`, headers: { authorization: `Bearer ${a.token}` }, payload: { query: "refund policy", topK: 5 } });
     const hitsA = JSON.parse(resA.body).data;
-    console.log("hitsA", JSON.stringify(hitsA).slice(0, 500));
     expect(hitsA.some((h: any) => h.content.includes("Secret B"))).toBe(false);
     expect(hitsA.some((h: any) => h.content.includes("Secret A"))).toBe(true);
     const cross = await app.inject({ method: "POST", url: `/api/v1/businesses/${bizA.id}/knowledge/search`, headers: { authorization: `Bearer ${b.token}` }, payload: { query: "refund policy" } });

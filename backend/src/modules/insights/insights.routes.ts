@@ -132,11 +132,11 @@ export async function insightsRoutes(app: FastifyInstance) {
   app.post("/api/v1/businesses/:businessId/insights/refresh", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
     const userId = (req as any).userId as string;
     const { businessId } = req.params as any;
-    await assertBusinessAccess(userId, businessId);
+    const business = await assertBusinessAccess(userId, businessId);
     const { ctx, signals } = await detectSignals(businessId);
     const created: any[] = [];
     for (const s of signals) {
-      const existing = await prisma.insight.findFirst({ where: { businessId, insightType: s.insightType, status: { in: ["new", "seen"] } } });
+      const existing = await prisma.insight.findFirst({ where: { businessId, insightType: s.insightType } });
       if (existing) continue;
       const insight = await prisma.insight.create({
         data: {
@@ -170,7 +170,7 @@ export async function insightsRoutes(app: FastifyInstance) {
           const prompt = `SYSTEM INSTRUCTIONS: You are FrontDesk AI. Explain why this business insight matters and recommend a safe next step. Distinguish FACT (evidence), INFERENCE (why), RECOMMENDATION (next step). Do not invent numbers. Use only provided facts.\n\n${contextParts}\n\nINSIGHT: ${insight.title} - ${insight.description}\n\nUSER REQUEST: Explain this insight and recommend a safe next step.`;
           const aiRes = await aiService.generate({
             message: prompt,
-            context: { businessId, userId, businessName: ctx.orders.today.toString(), productCount: ctx.products.total, enquiryNew: ctx.enquiries.open, avgPrice: 0 },
+            context: { businessId, userId, businessName: business.name, productCount: ctx.products.total, enquiryNew: ctx.enquiries.open, avgPrice: 0 },
             rateLimitKey: `insights:${businessId}:${userId}`,
           });
           const explanation = aiRes.message.slice(0, 500);
