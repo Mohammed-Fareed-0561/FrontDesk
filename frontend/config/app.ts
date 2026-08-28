@@ -11,6 +11,7 @@ export const NAVIGATION = {
     { label: "Orders", href: "/dashboard/orders" },
     { label: "Bookings", href: "/dashboard/bookings" },
     { label: "Knowledge", href: "/dashboard/knowledge" },
+    { label: "Memory", href: "/dashboard/memory" },
     { label: "Importer", href: "/dashboard/importer" },
     { label: "Website", href: "/dashboard/website" },
     { label: "Inbox", href: "/dashboard/inbox" },

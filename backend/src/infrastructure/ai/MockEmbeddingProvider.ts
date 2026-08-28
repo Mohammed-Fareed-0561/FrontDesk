@@ -13,6 +13,13 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
     if (lower.includes("product")) vec[3] = 1;
     if (lower.includes("price")) vec[4] = 1;
     if (lower.includes("ignore") || lower.includes("instruction")) vec[5] = 1;
+    if (lower.includes("whatsapp")) vec[6] = 1;
+    if (lower.includes("morning")) vec[7] = 1;
+    if (lower.includes("evening")) vec[8] = 1;
+    if (lower.includes("vector")) vec[9] = 1;
+    if (lower.includes("memory")) vec[10] = 1;
+    if (lower.includes("closing")) vec[11] = 1;
+    if (lower.includes("service")) vec[12] = 1;
     if (vec.some((v) => v !== 0)) {
       const norm = Math.sqrt(vec.reduce((s, v) => s + v * v, 0));
       return vec.map((v) => v / norm);
