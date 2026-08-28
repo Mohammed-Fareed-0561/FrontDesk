@@ -64,16 +64,17 @@ export async function knowledgeRoutes(app: FastifyInstance) {
       throw new AppError({ statusCode: 400, code: "EXTRACTION_FAILED", message: "No content to index" });
     }
     const embeddings = await mockEmbedding.embedBatch(chunks);
+    const isPg = (process.env.DATABASE_URL || "").startsWith("postgresql");
     for (let i = 0; i < chunks.length; i++) {
-      await prisma.knowledgeChunk.create({
-        data: {
-          documentId: doc.id,
-          chunkIndex: i,
-          content: chunks[i],
-          embedding: JSON.stringify(embeddings[i]),
-          metadata: JSON.stringify({ businessId, sourceType: parsed.data.sourceType, sourceId: doc.id, chunkIndex: i }),
-        },
-      });
+      const data: any = {
+        documentId: doc.id,
+        chunkIndex: i,
+        content: chunks[i],
+        embedding: JSON.stringify(embeddings[i]),
+        metadata: JSON.stringify({ businessId, sourceType: parsed.data.sourceType, sourceId: doc.id, chunkIndex: i }),
+      };
+      if (isPg) data.embeddingVec = embeddings[i] as any;
+      await prisma.knowledgeChunk.create({ data });
     }
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "KNOWLEDGE_CREATED", entityType: "knowledge", entityId: doc.id, afterData: JSON.stringify({ title: doc.title, chunks: chunks.length }) } });
     const withChunks = await prisma.knowledgeDocument.findUnique({ where: { id: doc.id }, include: { chunks: true } });
@@ -118,10 +119,11 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     await prisma.knowledgeChunk.deleteMany({ where: { documentId: knowledgeId } });
     const chunks = chunkText(doc.content);
     const embeddings = await mockEmbedding.embedBatch(chunks);
+    const isPgReindex = (process.env.DATABASE_URL || "").startsWith("postgresql");
     for (let i = 0; i < chunks.length; i++) {
-      await prisma.knowledgeChunk.create({
-        data: { documentId: knowledgeId, chunkIndex: i, content: chunks[i], embedding: JSON.stringify(embeddings[i]), metadata: JSON.stringify({ businessId, chunkIndex: i }) },
-      });
+      const data: any = { documentId: knowledgeId, chunkIndex: i, content: chunks[i], embedding: JSON.stringify(embeddings[i]), metadata: JSON.stringify({ businessId, chunkIndex: i }) };
+      if (isPgReindex) data.embeddingVec = embeddings[i] as any;
+      await prisma.knowledgeChunk.create({ data });
     }
     const updated = await prisma.knowledgeDocument.findUnique({ where: { id: knowledgeId }, include: { chunks: true } });
     return reply.send({ success: true, data: updated });

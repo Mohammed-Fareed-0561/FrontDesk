@@ -738,13 +738,14 @@ model KnowledgeDocument {
 }
 
 model KnowledgeChunk {
-  id         String   @id @default(uuid())
-  documentId String   @map("document_id")
-  chunkIndex Int?     @map("chunk_index")
-  content    String
-  embedding  String?  // JSON array string for SQLite dev; vector in Postgres
-  metadata   String?
-  createdAt  DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  documentId   String   @map("document_id")
+  chunkIndex   Int?     @map("chunk_index")
+  content      String
+  embedding    String?  // JSON array string for SQLite dev; vector in Postgres
+  embeddingVec Unsupported("vector(64)")? @map("embedding_vec")
+  metadata     String?
+  createdAt    DateTime @default(now()) @map("created_at")
 
   document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 

@@ -4,6 +4,29 @@ import { cosineSimilarity } from "../../infrastructure/ai/EmbeddingProvider.js";
 
 export async function retrieveKnowledge(businessId: string, query: string, topK = 5) {
   const queryEmbedding = await mockEmbedding.embed(query);
+  const isPg = (process.env.DATABASE_URL || "").startsWith("postgresql");
+  if (isPg) {
+    try {
+      const vectorStr = `[${queryEmbedding.join(",")}]`;
+      const rows: any[] = await prisma.$queryRawUnsafe(
+        `SELECT kc."id", kc."content", kc."document_id" as "documentId", kc."chunk_index" as "chunkIndex", kd."title", kd."source_type" as "sourceType", (kc."embedding_vec" <=> $1::vector) as "distance" FROM "knowledge_chunks" kc JOIN "knowledge_documents" kd ON kc."document_id" = kd."id" WHERE kd."business_id" = $2 AND kd."status" = 'active' AND kc."embedding_vec" IS NOT NULL ORDER BY kc."embedding_vec" <=> $1::vector LIMIT $3`,
+        vectorStr,
+        businessId,
+        topK
+      );
+      if (rows.length > 0) {
+        return rows
+          .map((r) => ({
+            content: r.content,
+            score: 1 - Number(r.distance),
+            provenance: { documentId: r.documentId, chunkIndex: r.chunkIndex, title: r.title, sourceType: r.sourceType, businessId },
+          }))
+          .filter((s) => s.score > 0.05);
+      }
+    } catch (e) {
+      console.warn("pgvector search failed, falling back to in-memory", e);
+    }
+  }
   const chunks = await prisma.knowledgeChunk.findMany({
     where: { document: { businessId, status: "active" } },
     include: { document: true },
@@ -17,7 +40,7 @@ export async function retrieveKnowledge(businessId: string, query: string, topK 
       const score = emb.length ? cosineSimilarity(queryEmbedding, emb) : 0;
       return { chunk: c, score };
     })
-    .filter((s) => s.score > 0.15)
+    .filter((s) => s.score > 0.05)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
     .map((s) => ({
