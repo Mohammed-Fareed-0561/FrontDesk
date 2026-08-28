@@ -10,6 +10,12 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("7d"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   FRONTEND_URL: z.string().default("http://localhost:3000"),
+  AI_PROVIDER: z.string().optional().default("mock"),
+  GROQ_API_KEY: z.string().optional(),
+  AI_PROVIDER_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().optional(),
+  GROQ_MODEL: z.string().optional(),
+  AI_TIMEOUT_MS: z.coerce.number().optional().default(10000),
 });
 
 export type Env = z.infer<typeof envSchema>;

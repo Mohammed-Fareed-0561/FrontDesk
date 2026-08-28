@@ -1,10 +1,21 @@
 # FrontDesk — MEMORY.md
 
-**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 19:30 UTC
+**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 20:00 UTC
 
-## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + PG + BOOKINGS (2026-08-27)
+## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + PG + BOOKINGS + AI ABSTRACTION (2026-08-27)
 
-### Current Increment: Bookings & Appointments P0 — VERIFIED
+### Current Increment: Real AI Provider Abstraction P0 — VERIFIED
+- **AI Architecture** `backend/src/infrastructure/ai/AIProvider.ts:1` + `MockProvider.ts:1` + `GroqProvider.ts:1` + `AIService.ts:1` — provider-neutral interface `AIProvider { name, model, generate(req) }` normalizing request/response/model/usage/latency/errors/timeout. `AIService` selects provider via `AI_PROVIDER`/`GROQ_API_KEY` (mock is default ₹0), validates provider/model against `ALLOWED_PROVIDERS`/`ALLOWED_MODELS`, enforces timeout `AI_TIMEOUT_MS` 10000 via AbortController, sanitizes errors (redacts `sk-`, `Bearer`), rate limits per `businessId:userId` and per provider (20/min, 60s window), clears via `clearRateLimit()`.
+- **Mock Provider** `MockProvider.ts:1` — deterministic, no external API, used for tests/CI/local, handles `add X for ₹Y` → CREATE_PRODUCT and `change X price to ₹Y` → UPDATE_PRODUCT (targetName), same business context (productCount, enquiryNew, avgPrice, businessName) as before.
+- **Groq Provider** `GroqProvider.ts:1` — `https://api.groq.com/openai/v1/chat/completions`, model `llama-3.1-8b-instant` (env `AI_MODEL`/`GROQ_MODEL`), system prompt with business context, temperature 0.3, max_tokens 500, timeout 10s, HMAC-style error sanitization, throws `Groq not configured` if key missing, `timeout` on AbortError.
+- **AI Service** `AIService.ts:1` — `getProviderName()` (groq if key else mock), `getProvider(requestedProvider, requestedModel)` with validation, `generate()` with rateLimit per business/user and per provider, `sanitizeError`, `clearRateLimit()`. Used by `backend/src/modules/ai/ai.routes.ts:1` (rewritten, 190 lines) for `POST /businesses/:id/ai/chat` (auth, business access, Zod, business context, `aiRequest` with provider/model, `aiService.generate` with rateLimitKey `ai:{bid}:{uid}`, actions via Action Registry, approval, audit, `aiOutput`), `GET /businesses/:id/approvals`, `POST /approvals/:id/approve|reject` (now correctly uses `actorType user` for audit, fixed FK), `POST /businesses/:id/copilot/query` (now via `aiService` with `copilot:{bid}:{uid}` rate limit, recommendations), `GET /businesses/:id/ai/history`.
+- **Env** `backend/src/config/env.ts:14` + `backend/.env.example:16` — added `AI_PROVIDER=mock`, `GROQ_API_KEY=`, `AI_MODEL=llama-3.1-8b-instant`, `AI_TIMEOUT_MS=10000` (server-only, never NEXT_PUBLIC).
+- **Security** Provider keys never in browser bundle, never in API responses (checked), never in logs (sanitized), tenant isolation via `assertBusinessAccess` (B cannot access A's AI), provider selection validated server-side, AI cannot bypass Action Registry/approval (CREATE_PRODUCT no approval, UPDATE_PRODUCT needs approval, verified via test), no direct DB access.
+- **Tests** Backend 75/75 (59 previous + 16 AI: mock default, successful generation + persistence, usage metadata, provider selection mock, invalid provider 422, invalid model 422, missing GROQ 200|422|502 with mock fallback, error sanitized, auth 401, tenant isolation 403, rate limiting 429 after 25, Action Registry, approval, secret leakage, copilot tenant isolation, timeout graceful). Frontend still 15/15 (Copilot uses mock, no external API). `pg` full suite also 75/75 in one run (502s Neon, `DATABASE_URL=neon JWT_SECRET=... npx vitest run --testTimeout=60000`).
+- **Builds**: `npx tsc --noEmit` both PASS, `npm run build` both PASS (backend tsc, frontend 18 routes).
+- **Runtime**: backend 0.0.0.0:4000 health 200, frontend prod 0.0.0.0:3000 /dashboard/copilot 200, Copilot chat via mock verified (add product, change price with approval), tenant isolation verified, rate limiting verified, no secret leakage.
+
+### Previous Increment: Bookings & Appointments P0 — VERIFIED
 - **Booking Model** `backend/prisma/schema.prisma:689` + `schema.pg.prisma:689` + `migrations/20260827182819_add_bookings/migration.sql` — `Booking` (id uuid, businessId indexed, customerId?, serviceId?, staffId?, locationId?, bookingNumber BK-xxx unique per business, startTime/endTime DateTime, status pending|confirmed|completed|cancelled|no_show default pending, source MANUAL default, customerNotes/internalNotes, createdBy, timestamps, cancelledAt/completedAt). Relations Business 1—* Booking, Customer 1—* Booking (SET_NULL), Service 1—* Booking (SET_NULL), SQLite+PG compatible, businessId+bookingNumber unique, businessId+status/startTime indexes.
 - **Services API** `backend/src/modules/services/services.routes.ts:1` (new, 60 lines) — POST /businesses/:id/services (name, price, durationMinutes, status active) with slug unique, audit SERVICE_CREATED; GET /businesses/:id/services (list 100, tenant isolated, search/status filter). Reuses existing Service model (businessId, name, slug, price, durationMinutes, status active) — no duplicate.
 - **Bookings API** `backend/src/modules/bookings/bookings.routes.ts:1` (new, 240 lines) — POST /businesses/:id/bookings (customerId/serviceId validated same business, startTime/endTime or durationMinutes, service duration fallback, conflict detection `businessId + status pending/confirmed + overlapping [start,end)`, bookingNumber BK-xxx, audit BOOKING_CREATED + domain BOOKING_CREATED), GET /businesses/:id/bookings (paginated 10, filters status/date/search, includes customer/service), GET /businesses/:id/bookings/:id, PATCH /businesses/:id/bookings/:id (notes/customer/service/time with conflict check), POST /bookings/:id/confirm (pending→confirmed), /cancel (pending/confirmed→cancelled), /complete (confirmed→completed), /no-show (confirmed→no_show), explicit state machine, audit+domain per transition, tenant isolation on every op, transactional where needed.
@@ -87,11 +98,12 @@ FrontDesk/
 │   ├── hooks/useBusiness.ts, lib/api/client.ts, providers/*, types/index.ts, config/app.ts
 │   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts,media.spec.ts,bookings.spec.ts} + playwright.config.ts
 ├── backend/
-│   ├── src/app/app.ts + plugins/auth.ts + config/env.ts
+│   ├── src/app/app.ts + plugins/auth.ts + config/env.ts (AI_PROVIDER, GROQ_API_KEY, AI_MODEL, AI_TIMEOUT_MS)
+│   ├── src/infrastructure/ai/{AIProvider.ts,MockProvider.ts,GroqProvider.ts,AIService.ts} (provider-neutral, mock+groq, ₹0, sanitized)
 │   ├── src/infrastructure/storage/{StorageAdapter.ts,LocalStorageAdapter.ts} (tenant-scoped, signed URLs, ₹0 dev)
 │   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments,bookings,services}
 │   ├── prisma/schema.prisma (sqlite dev) + schema.pg.prisma (postgresql prod, same models with Booking) + seed.ts + migrations/20260827174042_add_payments + 20260827182819_add_bookings + storage/business/{bid}/media/{mid}/*
-│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,bookings.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
+│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,bookings.test.ts,ai.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
 ├── documentation/ (59 specs)
 ├── docker-compose.yml (postgres:16 frontdesk/frontdesk), README.md, MEMORY.md
 ```
@@ -107,22 +119,22 @@ FrontDesk/
 - E2E relies on prod frontend for stability; dev vendor-chunks issue tracked.
 
 ## Next Recommended (if extending)
-1. **Real AI provider abstraction + Knowledge RAG** per `documentation/AI-BUSINESS-COPILOT.md` + `documentation/BUSINESS-KNOWLEDGE-BASE.md` (RAG with pgvector, after Bookings)
-2. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after Bookings verified; keep provider abstraction behind PaymentService
-3. **Observability/Disaster Recovery**: verify backup/restore via `pg_dump`/`pg_restore` per `documentation/DISASTER-RECOVERY.md`, add Pino request logging already, consider healthcheck for PG
-4. **Inventory/Automation** per `documentation/SYSTEM-ARCHITECTURE.md` (after Bookings, before AI Agents)
+1. **Knowledge Base + RAG Foundation** per `documentation/BUSINESS-KNOWLEDGE-BASE.md` + `documentation/BUSINESS-MEMORY.md` (pgvector, embeddings, chunking, retrieval) — after AI abstraction verified
+2. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after RAG; keep provider abstraction behind PaymentService
+3. **Observability/Disaster Recovery**: verify backup/restore via `pg_dump`/`pg_restore` per `documentation/DISASTER-RECOVERY.md`, add Pino request logging already
+4. **Inventory/Automation** per `documentation/SYSTEM-ARCHITECTURE.md` (after RAG, before AI Agents)
 
-## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG + Bookings)
-- backend: app, 16 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts` (DATABASE_URL fallback, fileParallelism false, 60s timeout), `tests/helpers.ts` (+payment, booking, service delete), `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `tests/bookings.test.ts` (16 new), `src/modules/orders/orders.routes.ts` (hardened), `src/modules/payments/payments.routes.ts` (180 lines), `src/infrastructure/storage/StorageAdapter.ts` + `LocalStorageAdapter.ts`, `src/modules/media/media.routes.ts` (hardened), `src/modules/bookings/bookings.routes.ts` (new, 240 lines, Booking model, conflict detection, state machine), `src/modules/services/services.routes.ts` (new, 60 lines, Service CRUD), `prisma/schema.prisma` (sqlite dev + Booking) + `prisma/schema.pg.prisma` (postgresql prod + Booking) + `prisma/migrations/20260827174042_add_payments/migration.sql` + `20260827182819_add_bookings/migration.sql`, `src/app/app.ts` (+bookingsRoutes, servicesRoutes), `storage/` added to .gitignore
-- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/bookings/page.tsx` (new, 5.19kB, list/pagination/search/date/status, detail with customer/service/schedule, create with customer/service/date/time/duration), `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB), `e2e/bookings.spec.ts` (2 new browser), `e2e/media.spec.ts` (2), `types/index.ts` (+Booking, Payment), `config/app.ts` (+Bookings), `components/layout/Sidebar.tsx` (+Calendar)
+## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG + Bookings + AI)
+- backend: app, 16 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts` (DATABASE_URL fallback, fileParallelism false, 60s timeout), `tests/helpers.ts` (+payment, booking, service), `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `tests/bookings.test.ts` (16), `tests/ai.test.ts` (16 new), `src/infrastructure/ai/AIProvider.ts` + `MockProvider.ts` + `GroqProvider.ts` + `AIService.ts` (provider-neutral, mock+groq, sanitized, rate limit), `src/config/env.ts` (+AI_PROVIDER, GROQ_API_KEY, AI_MODEL, AI_TIMEOUT_MS), `src/modules/ai/ai.routes.ts` (rewritten 190 lines, uses AIService, tenant isolation, rate limit, audit), `.env.example` (+AI placeholders), `src/modules/orders/orders.routes.ts` (hardened), `src/modules/payments/payments.routes.ts`, `src/infrastructure/storage/...`, `src/modules/media/media.routes.ts`, `src/modules/bookings/bookings.routes.ts` (240 lines), `src/modules/services/services.routes.ts`, `prisma/schema.prisma` + `prisma/schema.pg.prisma` + `migrations/20260827174042_add_payments` + `20260827182819_add_bookings`, `src/app/app.ts` (+bookingsRoutes, servicesRoutes)
+- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/bookings/page.tsx` (5.19kB), `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB with payments), `e2e/bookings.spec.ts` (2), `e2e/media.spec.ts` (2), `types/index.ts` (+Booking, Payment), `config/app.ts` (+Bookings), `components/layout/Sidebar.tsx` (+Calendar) — Copilot unchanged (uses mock)
 - root: .gitignore (+/storage, backend/storage), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
 
-## Verification (2026-08-27 19:45) — SQLite + PG + Bookings
+## Verification (2026-08-27 20:15) — SQLite + PG + Bookings + AI
 - `npm --prefix backend run lint` PASS (tsc)
 - `npm --prefix frontend run type-check` PASS
 - `npm --prefix backend run build` PASS
-- `npm --prefix frontend run build` PASS (18 routes, bookings 5.19kB, orders 7.03kB)
-- `npm --prefix backend run test` SQLite 59/59 PASS (11.7s, 7 api+11 orders+12 payments+13 media+16 bookings)
-- `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run tests/bookings.test.ts --testTimeout=60000` PG bookings 16/16 PASS (106s, lenient concurrent), full PG 43/43 previously 289s (now 59/59 expected ~350s, verified via db push + seed, PG bookings shows PG-compatible)
-- `bash -c 'cd frontend && npx playwright test'` 15/15 PASS (6 critical+3 orders API+2 orders UI+2 media+2 bookings UI, prod 3000, SQLite backend; PG backend API same)
-- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/bookings 200, create booking 201, conflict 409 vs adjacent 201, tenant isolation 403, service/customer ownership 422, audit BOOKING_CREATED verified
+- `npm --prefix frontend run build` PASS (18 routes, bookings 5.19kB)
+- `npm --prefix backend run test` SQLite 75/75 PASS (59 + 16 AI, 16s) — 7 api+11 orders+12 payments+13 media+16 bookings+16 ai (mock, provider selection, invalid, auth, tenant, rate limiting 429, Action Registry, approval, secret leakage, copilot)
+- `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run --testTimeout=60000` PG 75/75 PASS in one run (502s, Neon, postgresql via schema.pg.prisma, same 75) — previous 43/43 289s and 59/59 booking subset 106s now full 75/75 verified, no dev DB destroyed
+- `bash -c 'cd frontend && npx playwright test'` 15/15 PASS (6 critical+3 orders API+2 orders UI+2 media+2 bookings UI with AI mock, prod 3000)
+- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/bookings 200, /dashboard/copilot 200 chat via mock, create booking 201, payment idempotency, media signed URL, PG health 200 after `prisma generate --schema=schema.pg.prisma` + `DATABASE_URL=neon npx tsx watch` (previous sqlite client error fixed)
