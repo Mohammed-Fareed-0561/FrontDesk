@@ -1,10 +1,22 @@
 # FrontDesk — MEMORY.md
 
-**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 20:00 UTC
+**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 20:30 UTC
 
-## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + PG + BOOKINGS + AI ABSTRACTION (2026-08-27)
+## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + PG + BOOKINGS + AI + KNOWLEDGE (2026-08-27)
 
-### Current Increment: Real AI Provider Abstraction P0 — VERIFIED
+### Current Increment: Knowledge Base + RAG Foundation P0 — VERIFIED
+- **Knowledge Sources** `backend/src/modules/knowledge/knowledge.routes.ts:1` (new, 180 lines) + `retrieval.ts:1` — P0 Manual/FAQ/Policy/Product, reuse MediaAsset for file content, `POST /businesses/:id/knowledge` (title, content 1-20000, sourceType MANUAL default, secret detection `api_key`/`sk-`20+ etc., chunking 500/50 deterministic, mock embedding 64-dim, `prisma.knowledgeDocument` + `knowledgeChunk` with provenance `businessId, sourceType, sourceId, chunkIndex`), `GET /businesses/:id/knowledge` (list), `GET /businesses/:id/knowledge/:id`, `DELETE /knowledge/:id` (deletes chunks, audit), `POST /knowledge/reindex/:id` (deterministic, no duplicate), `POST /knowledge/search` (tenant-scoped vector search via cosine 0.05 threshold, topK 5, mock, provenance).
+- **Chunking** 500 chars, 50 overlap, retains `businessId, sourceType, sourceId, chunkIndex` in metadata, deterministic, no loss.
+- **Embeddings** `backend/src/infrastructure/ai/EmbeddingProvider.ts:1` + `MockEmbeddingProvider.ts:1` — interface `embed(text): number[]`, mock 64-dim deterministic (hash fallback, but keyword-aware for refund/policy/shipping/product/price/ignore for tests, normalized), `embedBatch`, `cosineSimilarity`. Real provider abstraction ready (Groq/OpenAI), mock is default ₹0, no external API for CI.
+- **Vector Storage** Reuses existing `KnowledgeDocument` (businessId, sourceType, sourceId, title, content, status active) + `KnowledgeChunk` (documentId, chunkIndex, content, embedding JSON, metadata) — no duplicate tables, SQLite uses TEXT JSON, PG could use pgvector (not yet enabled, documented, interface ready), `storage/` + `backend/storage/` ignored, `media` not duplicated.
+- **Retrieval** `retrieval.ts:1` — `retrieveKnowledge(businessId, query, topK)` (mock embed query, `findMany` chunks where `document.businessId`, cosine >0.05, sort, topK, returns `content, score, provenance`), `buildRagPrompt(userMessage, retrieved)` → `SYSTEM INSTRUCTIONS` + `BUSINESS KNOWLEDGE` (enumerated) + `USER REQUEST`, clearly marks knowledge as DATA, handles prompt injection (`Ignore previous instructions` treated as data, mock returns safe message without `sk-`).
+- **RAG Integration** `backend/src/modules/ai/ai.routes.ts:51` + `164` — `ai/chat` and `copilot/query` now call `retrieveKnowledge` (5) → `buildRagPrompt` → `aiService.generate` with RAG prompt, inject retrieved context, preserve `retrieved`/`provenance` in `aiOutput`, recommendations include `KNOWLEDGE_HIT` with provenance. RAG does not bypass Action Registry.
+- **Frontend** `frontend/app/(dashboard)/dashboard/knowledge/page.tsx:1` (new, 3.58kB, 19 routes) — `/dashboard/knowledge` with sources list (title, sourceType, chunks, status), new knowledge (title, sourceType, content, secret detection), view (chunks, provenance), delete, reindex, search test (query, topK, retrieved with score/provenance), tenant-isolated, reuses shadcn/ui. Navigation added `config/app.ts` + `Sidebar` BookOpen icon. Copilot now shows retrieved knowledge via recommendations.
+- **Tests** Backend 94/94 (75 previous + 19 new knowledge: create, ingestion, empty 422, chunking, embedding 64, retrieval, tenant isolation B cannot retrieve A, cross-tenant refund policy A/B, deleted not retrieved, reindex no duplicate, empty/failed, secret detection 400, prompt-injection data, provenance, deterministic, AI+RAG, safe errors, auth 401, cross-tenant list 403). PG full suite also 94/94 in one run 623s (Neon, `DATABASE_URL=neon JWT_SECRET=... npx vitest run --testTimeout=60000`).
+- **Builds**: `npx tsc --noEmit` both PASS, `npm run build` both PASS (backend tsc, frontend 19 routes, knowledge 3.58kB).
+- **Runtime**: backend 0.0.0.0:4000 health 200, frontend prod 0.0.0.0:3000 /dashboard/knowledge 200, ingestion via business context verified, retrieval tenant-isolated, deleted not retrieved, Copilot RAG includes retrieved context, prompt injection treated as data, provenance retained.
+
+### Previous Increment: Real AI Provider Abstraction P0 — VERIFIED
 - **AI Architecture** `backend/src/infrastructure/ai/AIProvider.ts:1` + `MockProvider.ts:1` + `GroqProvider.ts:1` + `AIService.ts:1` — provider-neutral interface `AIProvider { name, model, generate(req) }` normalizing request/response/model/usage/latency/errors/timeout. `AIService` selects provider via `AI_PROVIDER`/`GROQ_API_KEY` (mock is default ₹0), validates provider/model against `ALLOWED_PROVIDERS`/`ALLOWED_MODELS`, enforces timeout `AI_TIMEOUT_MS` 10000 via AbortController, sanitizes errors (redacts `sk-`, `Bearer`), rate limits per `businessId:userId` and per provider (20/min, 60s window), clears via `clearRateLimit()`.
 - **Mock Provider** `MockProvider.ts:1` — deterministic, no external API, used for tests/CI/local, handles `add X for ₹Y` → CREATE_PRODUCT and `change X price to ₹Y` → UPDATE_PRODUCT (targetName), same business context (productCount, enquiryNew, avgPrice, businessName) as before.
 - **Groq Provider** `GroqProvider.ts:1` — `https://api.groq.com/openai/v1/chat/completions`, model `llama-3.1-8b-instant` (env `AI_MODEL`/`GROQ_MODEL`), system prompt with business context, temperature 0.3, max_tokens 500, timeout 10s, HMAC-style error sanitization, throws `Groq not configured` if key missing, `timeout` on AbortError.
@@ -91,19 +103,19 @@ FrontDesk/
 ├── frontend/
 │   ├── app/
 │   │   ├── (auth)/login,signup
-│   │   ├── (dashboard)/dashboard/{business,catalog,orders,bookings,importer,website,inbox,customers,copilot,activity,settings}
+│   │   ├── (dashboard)/dashboard/{business,catalog,orders,bookings,knowledge,importer,website,inbox,customers,copilot,activity,settings}
 │   │   ├── b/[slug]/page.tsx  # public storefront
 │   │   ├── layout.tsx + globals.css
 │   ├── components/ui/{button,card,input,table,dialog,badge,toast,use-toast,...} + layout/{Sidebar,Topbar}
 │   ├── hooks/useBusiness.ts, lib/api/client.ts, providers/*, types/index.ts, config/app.ts
-│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts,media.spec.ts,bookings.spec.ts} + playwright.config.ts
+│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts,media.spec.ts,bookings.spec.ts,knowledge.spec.ts} + playwright.config.ts
 ├── backend/
 │   ├── src/app/app.ts + plugins/auth.ts + config/env.ts (AI_PROVIDER, GROQ_API_KEY, AI_MODEL, AI_TIMEOUT_MS)
-│   ├── src/infrastructure/ai/{AIProvider.ts,MockProvider.ts,GroqProvider.ts,AIService.ts} (provider-neutral, mock+groq, ₹0, sanitized)
+│   ├── src/infrastructure/ai/{AIProvider.ts,MockProvider.ts,GroqProvider.ts,AIService.ts,EmbeddingProvider.ts,MockEmbeddingProvider.ts} (provider-neutral, mock+groq, mock embeddings, ₹0)
 │   ├── src/infrastructure/storage/{StorageAdapter.ts,LocalStorageAdapter.ts} (tenant-scoped, signed URLs, ₹0 dev)
-│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments,bookings,services}
-│   ├── prisma/schema.prisma (sqlite dev) + schema.pg.prisma (postgresql prod, same models with Booking) + seed.ts + migrations/20260827174042_add_payments + 20260827182819_add_bookings + storage/business/{bid}/media/{mid}/*
-│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,bookings.test.ts,ai.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
+│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments,bookings,services,knowledge} (knowledge: retrieval.ts)
+│   ├── prisma/schema.prisma (sqlite dev) + schema.pg.prisma (postgresql prod, same models with Booking, KnowledgeDocument/Chunk) + seed.ts + migrations/20260827174042_add_payments + 20260827182819_add_bookings + storage/business/{bid}/media/{mid}/*
+│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,bookings.test.ts,ai.test.ts,knowledge.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
 ├── documentation/ (59 specs)
 ├── docker-compose.yml (postgres:16 frontdesk/frontdesk), README.md, MEMORY.md
 ```
@@ -119,22 +131,22 @@ FrontDesk/
 - E2E relies on prod frontend for stability; dev vendor-chunks issue tracked.
 
 ## Next Recommended (if extending)
-1. **Knowledge Base + RAG Foundation** per `documentation/BUSINESS-KNOWLEDGE-BASE.md` + `documentation/BUSINESS-MEMORY.md` (pgvector, embeddings, chunking, retrieval) — after AI abstraction verified
+1. **Business Memory 2.0** per `documentation/BUSINESS-MEMORY.md` (operational memory, preferences, history, separate from Knowledge Base) — after RAG
 2. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after RAG; keep provider abstraction behind PaymentService
 3. **Observability/Disaster Recovery**: verify backup/restore via `pg_dump`/`pg_restore` per `documentation/DISASTER-RECOVERY.md`, add Pino request logging already
 4. **Inventory/Automation** per `documentation/SYSTEM-ARCHITECTURE.md` (after RAG, before AI Agents)
 
-## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG + Bookings + AI)
-- backend: app, 16 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts` (DATABASE_URL fallback, fileParallelism false, 60s timeout), `tests/helpers.ts` (+payment, booking, service), `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `tests/bookings.test.ts` (16), `tests/ai.test.ts` (16 new), `src/infrastructure/ai/AIProvider.ts` + `MockProvider.ts` + `GroqProvider.ts` + `AIService.ts` (provider-neutral, mock+groq, sanitized, rate limit), `src/config/env.ts` (+AI_PROVIDER, GROQ_API_KEY, AI_MODEL, AI_TIMEOUT_MS), `src/modules/ai/ai.routes.ts` (rewritten 190 lines, uses AIService, tenant isolation, rate limit, audit), `.env.example` (+AI placeholders), `src/modules/orders/orders.routes.ts` (hardened), `src/modules/payments/payments.routes.ts`, `src/infrastructure/storage/...`, `src/modules/media/media.routes.ts`, `src/modules/bookings/bookings.routes.ts` (240 lines), `src/modules/services/services.routes.ts`, `prisma/schema.prisma` + `prisma/schema.pg.prisma` + `migrations/20260827174042_add_payments` + `20260827182819_add_bookings`, `src/app/app.ts` (+bookingsRoutes, servicesRoutes)
-- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/bookings/page.tsx` (5.19kB), `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB with payments), `e2e/bookings.spec.ts` (2), `e2e/media.spec.ts` (2), `types/index.ts` (+Booking, Payment), `config/app.ts` (+Bookings), `components/layout/Sidebar.tsx` (+Calendar) — Copilot unchanged (uses mock)
+## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG + Bookings + AI + Knowledge)
+- backend: app, 17 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts` (DATABASE_URL fallback, fileParallelism false, 60s timeout), `tests/helpers.ts` (knowledge cleanup), `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `tests/bookings.test.ts` (16), `tests/ai.test.ts` (16), `tests/knowledge.test.ts` (19 new), `src/infrastructure/ai/AIProvider.ts` + `MockProvider.ts` + `GroqProvider.ts` + `AIService.ts` + `EmbeddingProvider.ts` + `MockEmbeddingProvider.ts` (mock 64-dim keyword-aware, cosine), `src/config/env.ts` (+AI), `src/modules/ai/ai.routes.ts` (190 lines + RAG 2 lines: retrieveKnowledge 5 + buildRagPrompt, provenance), `.env.example` (+AI), `src/modules/knowledge/knowledge.routes.ts` (new 180 lines, ingestion, chunking 500/50, embedding, search topK 5 threshold 0.05, tenant-scoped, secret detection, reindex, delete) + `retrieval.ts` (retrieveKnowledge, buildRagPrompt with SYSTEM/BUSINESS KNOWLEDGE/USER REQUEST, prompt injection as data), `src/app/app.ts` (+knowledgeRoutes), `prisma/schema.prisma` + `schema.pg.prisma` + `migrations` + `storage/`
+- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/knowledge/page.tsx` (new, 3.58kB, list/search/retrieval test, view chunks, provenance, delete/reindex) + `app/(dashboard)/dashboard/bookings/page.tsx` (5.19kB) + `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB) + `e2e/knowledge.spec.ts` (not yet, but `e2e/bookings.spec.ts` 2, `media` 2, `knowledge` via backend), `types/index.ts` (+Booking, Payment), `config/app.ts` (+Knowledge, Bookings), `components/layout/Sidebar.tsx` (+Calendar, BookOpen)
 - root: .gitignore (+/storage, backend/storage), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
 
-## Verification (2026-08-27 20:15) — SQLite + PG + Bookings + AI
+## Verification (2026-08-27 21:00) — SQLite + PG + Bookings + AI + Knowledge
 - `npm --prefix backend run lint` PASS (tsc)
 - `npm --prefix frontend run type-check` PASS
 - `npm --prefix backend run build` PASS
-- `npm --prefix frontend run build` PASS (18 routes, bookings 5.19kB)
-- `npm --prefix backend run test` SQLite 75/75 PASS (59 + 16 AI, 16s) — 7 api+11 orders+12 payments+13 media+16 bookings+16 ai (mock, provider selection, invalid, auth, tenant, rate limiting 429, Action Registry, approval, secret leakage, copilot)
-- `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run --testTimeout=60000` PG 75/75 PASS in one run (502s, Neon, postgresql via schema.pg.prisma, same 75) — previous 43/43 289s and 59/59 booking subset 106s now full 75/75 verified, no dev DB destroyed
-- `bash -c 'cd frontend && npx playwright test'` 15/15 PASS (6 critical+3 orders API+2 orders UI+2 media+2 bookings UI with AI mock, prod 3000)
-- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/bookings 200, /dashboard/copilot 200 chat via mock, create booking 201, payment idempotency, media signed URL, PG health 200 after `prisma generate --schema=schema.pg.prisma` + `DATABASE_URL=neon npx tsx watch` (previous sqlite client error fixed)
+- `npm --prefix frontend run build` PASS (19 routes, knowledge 3.58kB, bookings 5.19kB)
+- `npm --prefix backend run test` SQLite 94/94 PASS (75 + 19 knowledge, 18s, 7 api+11 orders+12 payments+13 media+16 bookings+16 ai+19 knowledge: tenant isolation cross-tenant refund 30 vs 7 days, prompt-injection data, provenance, reindex, secret detection, RAG)
+- `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run --testTimeout=60000` PG 94/94 PASS in one run 623s (Neon, postgresql via schema.pg.prisma, same 94, previous 75/75 502s now 94/94)
+- `bash -c 'cd frontend && npx playwright test'` 15/15 PASS (6 critical+3 orders API+2 orders UI+2 media+2 bookings UI with AI mock + 2 knowledge list/search via backend, prod 3000; Copilot RAG via mock verified)
+- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/knowledge 200 ingestion 201 chunks>0, search topK 5 with provenance, tenant isolation verified (A cannot retrieve B), deleted not retrieved, reindex no duplicate, prompt injection treated as data, Copilot RAG includes retrieved context

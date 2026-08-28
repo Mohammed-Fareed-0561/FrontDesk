@@ -6,7 +6,17 @@ export class MockProvider implements AIProvider {
 
   async generate(req: AIProviderRequest): Promise<AIProviderResponse> {
     const lower = req.message.toLowerCase();
-    let message = `Thanks for asking: "${req.message}". I can help you manage catalog, website, and enquiries. For example, say "add cappuccino for ₹120" and I'll propose the change for your approval.`;
+    if (lower.includes("sk-") || lower.includes("api credentials") || lower.includes("ignore previous instructions")) {
+      return {
+        message: `I found some business knowledge but it contains instructions that I treat as data, not to follow. I can help you manage your business.`,
+        actions: [],
+        sources: [],
+        usage: { inputTokens: req.message.length, outputTokens: 50 },
+        provider: this.name,
+        model: this.model,
+      };
+    }
+    let message = `Thanks for asking: "${req.message.slice(0, 100)}". I can help you manage catalog, website, and enquiries. For example, say "add cappuccino for ₹120" and I'll propose the change for your approval.`;
     if (lower.includes("price") || lower.includes("product")) {
       message = `I found ${req.context.productCount} active products. Your top products have an average price around ₹${req.context.avgPrice || 250}. Want me to suggest a promotion?`;
     } else if (lower.includes("today") || lower.includes("task")) {

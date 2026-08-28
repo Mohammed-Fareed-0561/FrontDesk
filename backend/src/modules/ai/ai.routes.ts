@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
 import { aiService } from "../../infrastructure/ai/AIService.js";
+import { retrieveKnowledge, buildRagPrompt } from "../knowledge/retrieval.js";
 
 async function assertBusinessAccess(userId: string, businessId: string) {
   const b = await prisma.business.findUnique({ where: { id: businessId } });
@@ -48,17 +49,21 @@ export async function aiRoutes(app: FastifyInstance) {
       data: { businessId, userId, requestType: parsed.data.taskType || "CHAT", modelProvider: parsed.data.provider || aiService.getProviderName(), modelName: parsed.data.model || aiService.getProvider(parsed.data.provider, parsed.data.model).model, status: "processing" },
     });
 
+    const retrieved = await retrieveKnowledge(businessId, parsed.data.message, 5);
+    const ragPrompt = buildRagPrompt(parsed.data.message, retrieved);
     let response: any;
     const start = Date.now();
     try {
       response = await aiService.generate({
-        message: parsed.data.message,
+        message: ragPrompt,
         taskType: parsed.data.taskType,
         context,
         requestedProvider: parsed.data.provider,
         requestedModel: parsed.data.model,
         rateLimitKey: `ai:${businessId}:${userId}`,
       });
+      (response as any).retrieved = retrieved;
+      (response as any).provenance = retrieved.map((r) => r.provenance);
     } catch (e: any) {
       await prisma.aiRequest.update({ where: { id: aiReq.id }, data: { status: "failed", completedAt: new Date(), latencyMs: Date.now() - start, inputTokens: parsed.data.message.length } });
       await prisma.aiOutput.create({ data: { aiRequestId: aiReq.id, outputType: "error", content: JSON.stringify({ error: e.message }), confidence: 0 } });
@@ -99,9 +104,9 @@ export async function aiRoutes(app: FastifyInstance) {
     }
 
     await prisma.aiRequest.update({ where: { id: aiReq.id }, data: { status: "completed", completedAt: new Date(), latencyMs: Date.now() - start, inputTokens: parsed.data.message.length, outputTokens: response.message.length } });
-    await prisma.aiOutput.create({ data: { aiRequestId: aiReq.id, outputType: "chat", content: JSON.stringify({ ...response, actions }), confidence: 0.9 } });
+    await prisma.aiOutput.create({ data: { aiRequestId: aiReq.id, outputType: "chat", content: JSON.stringify({ ...response, actions, retrieved: (response as any).retrieved }), confidence: 0.9 } });
 
-    return reply.send({ success: true, data: { message: response.message, actions, businessContext: { productCount: context.productCount }, provider: response.provider, model: response.model, usage: response.usage } });
+    return reply.send({ success: true, data: { message: response.message, actions, businessContext: { productCount: context.productCount }, provider: response.provider, model: response.model, usage: response.usage, retrieved: (response as any).retrieved, provenance: (response as any).provenance } });
   });
 
   app.get("/api/v1/businesses/:businessId/approvals", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
@@ -157,7 +162,10 @@ export async function aiRoutes(app: FastifyInstance) {
     let copilotResponse: any;
     try {
       const ctx = { businessId, userId, businessName: business.name, productCount: 0, enquiryNew: 0, avgPrice: 0 };
-      copilotResponse = await aiService.generate({ message: parsed.data.message, context: ctx as any, requestedProvider: parsed.data.provider, requestedModel: parsed.data.model, rateLimitKey: `copilot:${businessId}:${userId}` });
+      const retrieved = await retrieveKnowledge(businessId, parsed.data.message, 5);
+      const ragPrompt = buildRagPrompt(parsed.data.message, retrieved);
+      copilotResponse = await aiService.generate({ message: ragPrompt, context: ctx as any, requestedProvider: parsed.data.provider, requestedModel: parsed.data.model, rateLimitKey: `copilot:${businessId}:${userId}` });
+      (copilotResponse as any).retrieved = retrieved;
     } catch (e: any) {
       await prisma.aiRequest.update({ where: { id: aiReq.id }, data: { status: "failed", completedAt: new Date() } });
       throw new AppError({ statusCode: 502, code: "AI_PROVIDER_ERROR", message: e.message });
@@ -168,9 +176,14 @@ export async function aiRoutes(app: FastifyInstance) {
     if (enquiries > 0) recommendations.push({ type: "ENQUIRY_FOLLOWUP", priority: "high", message: `You have ${enquiries} new enquiries needing reply.`, actionAvailable: true });
     if (products.filter(p => p.status === "draft").length > 0) recommendations.push({ type: "REVIEW_PRODUCTS", priority: "medium", message: "Some imported products need review before publishing.", actionAvailable: true });
     if (copilotResponse.message) recommendations.push({ type: "AI_RESPONSE", priority: "medium", message: copilotResponse.message, actionAvailable: false });
+    if ((copilotResponse as any).retrieved?.length) {
+      for (const r of (copilotResponse as any).retrieved) {
+        recommendations.push({ type: "KNOWLEDGE_HIT", priority: "info", message: r.content.slice(0, 120), provenance: r.provenance, actionAvailable: false });
+      }
+    }
     await prisma.aiRequest.update({ where: { id: aiReq.id }, data: { status: "completed", completedAt: new Date() } });
-    await prisma.aiOutput.create({ data: { aiRequestId: aiReq.id, content: JSON.stringify({ recommendations, provider: copilotResponse.provider, model: copilotResponse.model }), outputType: "copilot" } });
-    return reply.send({ success: true, data: { message: parsed.data.message ? `Analyzed: ${parsed.data.message}` : "Here's what needs attention today.", recommendations, business: { name: business.name }, provider: copilotResponse.provider, model: copilotResponse.model } });
+    await prisma.aiOutput.create({ data: { aiRequestId: aiReq.id, content: JSON.stringify({ recommendations, provider: copilotResponse.provider, model: copilotResponse.model, retrieved: (copilotResponse as any).retrieved }), outputType: "copilot" } });
+    return reply.send({ success: true, data: { message: parsed.data.message ? `Analyzed: ${parsed.data.message}` : "Here's what needs attention today.", recommendations, business: { name: business.name }, provider: copilotResponse.provider, model: copilotResponse.model, retrieved: (copilotResponse as any).retrieved } });
   });
 
   app.get("/api/v1/businesses/:businessId/ai/history", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
