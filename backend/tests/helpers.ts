@@ -9,11 +9,16 @@ export async function createTestApp() {
 
 export async function cleanupDb() {
   const t = prisma;
+  await t.notification.deleteMany();
   await t.auditLog.deleteMany();
   await t.domainEvent.deleteMany();
   await t.eventDelivery.deleteMany();
   await t.actionExecution.deleteMany();
   await t.approvalRequest.deleteMany();
+  await t.automationRun.deleteMany();
+  await t.automationStep.deleteMany();
+  await t.automation.deleteMany();
+  await t.insight.deleteMany();
   await t.aiOutput.deleteMany();
   await t.aiRequest.deleteMany();
   await (t as any).payment?.deleteMany?.();

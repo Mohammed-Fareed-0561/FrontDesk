@@ -119,13 +119,9 @@ export async function paymentsRoutes(app: FastifyInstance) {
         afterData: JSON.stringify({ paymentId: payment.id, orderId, amount: authoritativeAmount, status: paymentStatus, method: parsed.data.paymentMethod, idempotencyKey }),
       },
     });
-    await prisma.domainEvent.create({
-      data: { businessId, eventType: "PAYMENT_CREATED", aggregateType: "payment", aggregateId: payment.id, payload: JSON.stringify({ paymentId: payment.id, orderId, amount: authoritativeAmount, status: paymentStatus }) },
-    });
+    await emitAndDispatch({ businessId, eventType: "PAYMENT_CREATED", aggregateType: "payment", aggregateId: payment.id, payload: JSON.stringify({ paymentId: payment.id, orderId, amount: authoritativeAmount, status: paymentStatus }) });
     if (paymentStatus === "paid") {
-      await prisma.domainEvent.create({
-        data: { businessId, eventType: "PAYMENT_PAID", aggregateType: "payment", aggregateId: payment.id, payload: JSON.stringify({ paymentId: payment.id, orderId }) },
-      });
+      await emitAndDispatch({ businessId, eventType: "PAYMENT_PAID", aggregateType: "payment", aggregateId: payment.id, payload: JSON.stringify({ paymentId: payment.id, orderId }) });
     }
 
     return reply.code(201).send({ success: true, data: payment });
@@ -189,9 +185,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
     await prisma.auditLog.create({
       data: { businessId, actorType: "user", actorId: userId, action: "PAYMENT_STATUS_UPDATED", entityType: "payment", entityId: paymentId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) },
     });
-    await prisma.domainEvent.create({
-      data: { businessId, eventType: "PAYMENT_STATUS_UPDATED", aggregateType: "payment", aggregateId: paymentId, payload: JSON.stringify({ paymentId, from: payment.status, to: parsed.data.status }) },
-    });
+    await emitAndDispatch({ businessId, eventType: "PAYMENT_STATUS_UPDATED", aggregateType: "payment", aggregateId: paymentId, payload: JSON.stringify({ paymentId, from: payment.status, to: parsed.data.status }) });
     return reply.send({ success: true, data: updated });
   });
 

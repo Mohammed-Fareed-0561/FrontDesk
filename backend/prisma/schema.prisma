@@ -125,6 +125,7 @@ model Business {
   payments   Payment[]
   bookings   Booking[]
   insights   Insight[]
+  notifications Notification[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -1009,4 +1010,29 @@ model Insight {
   @@index([businessId, status])
   @@index([businessId, insightType])
   @@map("insights")
+}
+
+// Notifications
+model Notification {
+  id           String   @id @default(uuid())
+  businessId   String   @map("business_id")
+  recipientId  String?  @map("recipient_id") // userId or null for broadcast
+  type         String   // INSIGHT|BOOKING|ORDER|PAYMENT|SYSTEM|AUTOMATION
+  title        String
+  message      String
+  severity     String   @default("info") // info|low|medium|high|critical
+  status       String   @default("unread") // unread|read
+  sourceType   String?  @map("source_type") // insight|booking|order|payment|automation
+  sourceId     String?  @map("source_id")
+  metadata     String?  // JSON
+  createdAt    DateTime @default(now()) @map("created_at")
+  readAt       DateTime? @map("read_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, recipientId, sourceType, sourceId], name: "notif_idempotency")
+  @@index([businessId, status])
+  @@index([businessId, recipientId])
+  @@index([businessId, type])
+  @@map("notifications")
 }

@@ -2535,3 +2535,49 @@ Never trust client input, AI output, imported content, or external events.
 Scalability principle:
 
 Start simple, keep module boundaries clean, extract services only when justified.
+
+---
+
+# P0 Implementation Status (Automation Engine)
+
+**Last Updated:** 2026-08-29
+
+## Implemented Components
+
+### Event System
+- `DomainEvent` model with businessId, eventType, aggregateType/Id, payload
+- `EventDelivery` model for consumer delivery tracking
+- `emitAndDispatch()` hook used by: enquiries, orders, bookings, payments, insights routes
+- Synchronous in-process dispatcher (replaceable for future queue-based processing)
+
+### Action Registry
+- `ActionDefinition` model with actionKey, name, approvalRequired flags
+- Seeded on startup: CREATE_PRODUCT, UPDATE_PRODUCT, DELETE_PRODUCT, PUBLISH_WEBSITE, CREATE_OFFER
+- `ActionExecution` records every action with input/output, status, approval reference
+- `ApprovalRequest` model for human-in-the-loop approval workflow
+
+### Automation Engine
+- **Engine** (`engine.ts`): trigger matching, condition evaluation (eq/neq/gt/gte/lt/lte/contains), config validation, action execution
+- **Dispatcher** (`dispatcher.ts`): matches domain events to active automations, idempotency check, manual trigger support
+- **Hook** (`hook.ts`): `emitAndDispatch()` for seamless event creation + dispatch from any route
+
+### Security
+- Config validation rejects: exec, eval, Function, require, shell, system, __proto__, fetch, http
+- Tenant isolation enforced on all automation operations
+- Cross-tenant events cannot trigger cross-tenant automations
+- Automation config is data, not executable code
+
+### API
+- `GET/POST /api/v1/businesses/:id/automations` — list, create
+- `GET/PATCH/DELETE /api/v1/businesses/:id/automations/:id` — get, update, delete
+- `POST .../enable`, `POST .../disable` — toggle status
+- `POST .../trigger` — manual test trigger
+- `GET .../runs` — execution history
+- `GET /api/v1/automations/triggers` — supported trigger list
+
+### Frontend
+- `/dashboard/automations` — full CRUD UI with status, trigger/action badges, run history
+
+### Tests
+- 23 backend tests: CRUD, triggers, conditions, idempotency, approval, audit, tenant isolation, security
+- Playwright E2E: API lifecycle tests + UI navigation tests

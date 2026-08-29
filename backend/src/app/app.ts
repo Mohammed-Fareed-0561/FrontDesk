@@ -25,6 +25,7 @@ import { servicesRoutes } from "../modules/services/services.routes.js";
 import { knowledgeRoutes } from "../modules/knowledge/knowledge.routes.js";
 import { insightsRoutes } from "../modules/insights/insights.routes.js";
 import { automationsRoutes } from "../modules/automations/automations.routes.js";
+import { notificationsRoutes } from "../modules/notifications/notifications.routes.js";
 import { AppError } from "../shared/errors/AppError.js";
 
 export async function buildApp() {
@@ -65,6 +66,7 @@ export async function buildApp() {
       { actionKey: "DELETE_PRODUCT", name: "Delete Product", approvalRequired: true },
       { actionKey: "PUBLISH_WEBSITE", name: "Publish Website", approvalRequired: false },
       { actionKey: "CREATE_OFFER", name: "Create Offer", approvalRequired: false },
+      { actionKey: "CREATE_NOTIFICATION", name: "Create Notification", approvalRequired: false },
     ];
     for (const d of defs) {
       await prisma.actionDefinition.upsert({ where: { actionKey: d.actionKey }, update: {}, create: d });
@@ -91,6 +93,7 @@ export async function buildApp() {
   await app.register(knowledgeRoutes);
   await app.register(insightsRoutes);
   await app.register(automationsRoutes);
+  await app.register(notificationsRoutes);
 
   // 404
   app.setNotFoundHandler((req, reply) => {

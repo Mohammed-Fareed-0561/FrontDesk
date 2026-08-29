@@ -220,6 +220,87 @@ describe("Automation Engine — P0", () => {
     expect(res.statusCode).toBe(422);
   });
 
+  it("update automation config", async () => {
+    const { token } = await signup(`autoU${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const cr = await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/automations`, headers: { authorization: `Bearer ${token}` }, payload: { name: "Original", triggerConfig: JSON.stringify({ eventType: "ENQUIRY_CREATED" }) } });
+    const id = JSON.parse(cr.body).data.id;
+    const res = await app.inject({ method: "PATCH", url: `/api/v1/businesses/${biz.id}/automations/${id}`, headers: { authorization: `Bearer ${token}` }, payload: { name: "Updated" } });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).data.name).toBe("Updated");
+  });
+
+  it("get automation by ID", async () => {
+    const { token } = await signup(`autoG${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const cr = await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/automations`, headers: { authorization: `Bearer ${token}` }, payload: { name: "FetchMe", triggerConfig: JSON.stringify({ eventType: "ENQUIRY_CREATED" }) } });
+    const id = JSON.parse(cr.body).data.id;
+    const res = await app.inject({ method: "GET", url: `/api/v1/businesses/${biz.id}/automations/${id}`, headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).data.name).toBe("FetchMe");
+  });
+
+  it("cross-tenant event does not trigger B's automation", async () => {
+    const a = await signup(`autoXa${Date.now()}@test.com`);
+    const b = await signup(`autoXb${Date.now()}@test.com`);
+    const bizA = await createBusiness(a.token);
+    const bizB = await createBusiness(b.token);
+    // B creates automation
+    const crB = await app.inject({ method: "POST", url: `/api/v1/businesses/${bizB.id}/automations`, headers: { authorization: `Bearer ${b.token}` }, payload: { name: "B Auto", triggerConfig: JSON.stringify({ eventType: "ENQUIRY_CREATED" }), actionsConfig: JSON.stringify([{ actionKey: "CREATE_PRODUCT" }]) } });
+    const autoBId = JSON.parse(crB.body).data.id;
+    await app.inject({ method: "POST", url: `/api/v1/businesses/${bizB.id}/automations/${autoBId}/enable`, headers: { authorization: `Bearer ${b.token}` } });
+    // A creates enquiry (emits event for bizA)
+    const custA = await app.inject({ method: "POST", url: `/api/v1/businesses/${bizA.id}/customers`, headers: { authorization: `Bearer ${a.token}` }, payload: { name: "CustA", phone: "+919999999998" } });
+    const custAId = JSON.parse(custA.body).data.id;
+    await app.inject({ method: "POST", url: `/api/v1/businesses/${bizA.id}/enquiries`, headers: { authorization: `Bearer ${a.token}` }, payload: { customerId: custAId, subject: "A", message: "Hi" } });
+    await new Promise((r) => setTimeout(r, 1000));
+    // B's automation should NOT have runs
+    const runsB = await app.inject({ method: "GET", url: `/api/v1/businesses/${bizB.id}/automations/${autoBId}/runs`, headers: { authorization: `Bearer ${b.token}` } });
+    const runDataB = JSON.parse(runsB.body).data;
+    expect(runDataB.length).toBe(0);
+  });
+
+  it("idempotency: same event does not create duplicate runs", async () => {
+    const { token } = await signup(`autoId${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const cr = await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/automations`, headers: { authorization: `Bearer ${token}` }, payload: { name: "Idempotent", triggerConfig: JSON.stringify({ eventType: "ENQUIRY_CREATED" }), actionsConfig: JSON.stringify([{ actionKey: "CREATE_PRODUCT" }]) } });
+    const autoId = JSON.parse(cr.body).data.id;
+    await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/automations/${autoId}/enable`, headers: { authorization: `Bearer ${token}` } });
+    const cust = await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/customers`, headers: { authorization: `Bearer ${token}` }, payload: { name: "IdemCust", phone: "+919999999997" } });
+    const custId = JSON.parse(cust.body).data.id;
+    await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/enquiries`, headers: { authorization: `Bearer ${token}` }, payload: { customerId: custId, subject: "Idem", message: "Test" } });
+    await new Promise((r) => setTimeout(r, 1500));
+    const runs = await app.inject({ method: "GET", url: `/api/v1/businesses/${biz.id}/automations/${autoId}/runs`, headers: { authorization: `Bearer ${token}` } });
+    const runData = JSON.parse(runs.body).data;
+    // Should have exactly 1 run, not duplicates
+    expect(runData.length).toBe(1);
+  });
+
+  it("malicious JavaScript in trigger config is rejected", async () => {
+    const { token } = await signup(`autoJS${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const res = await app.inject({
+      method: "POST", url: `/api/v1/businesses/${biz.id}/automations`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "JS Bad", triggerConfig: JSON.stringify({ eventType: "ENQUIRY_CREATED", code: "require('child_process').execSync('whoami')" }) },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it("automation runs endpoint returns runs", async () => {
+    const { token } = await signup(`autoR${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const cr = await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/automations`, headers: { authorization: `Bearer ${token}` }, payload: { name: "RunsTest", triggerConfig: JSON.stringify({ eventType: "ENQUIRY_CREATED" }) } });
+    const id = JSON.parse(cr.body).data.id;
+    await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/automations/${id}/enable`, headers: { authorization: `Bearer ${token}` } });
+    await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/automations/${id}/trigger`, headers: { authorization: `Bearer ${token}` } });
+    const res = await app.inject({ method: "GET", url: `/api/v1/businesses/${biz.id}/automations/${id}/runs`, headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    const runs = JSON.parse(res.body).data;
+    expect(runs.length).toBeGreaterThan(0);
+    expect(runs[0].status).toBe("completed");
+  });
+
   it("supported triggers endpoint returns list", async () => {
     const { token } = await signup(`auto16${Date.now()}@test.com`);
     const res = await app.inject({ method: "GET", url: "/api/v1/automations/triggers", headers: { authorization: `Bearer ${token}` } });

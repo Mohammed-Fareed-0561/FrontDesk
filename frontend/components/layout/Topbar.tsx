@@ -15,13 +15,16 @@ import { ChevronDown, LifeBuoy } from "lucide-react";
 import { initials } from "@/lib/utils";
 import Link from "next/link";
 import { Sheet } from "@/components/ui/sheet";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 export function Topbar() {
   const { user, logout } = useAuth();
 
   return (
-    <header className="flex h-14 items-center justify-end gap-4 border-b bg-card px-4">
+    <header className="flex h-14 items-center justify-between gap-4 border-b bg-card px-4">
+      <div />
       <div className="flex items-center gap-2">
+        <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="flex items-center gap-2">

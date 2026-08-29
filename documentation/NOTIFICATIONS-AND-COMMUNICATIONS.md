@@ -1763,3 +1763,73 @@ Act
 Communicate
  ↓
 Measure
+
+---
+
+# P0 Implementation Status (Notification Delivery Foundation)
+
+**Last Updated:** 2026-08-29
+
+## What Is Implemented (P0)
+
+### Notification Model (Prisma)
+- `Notification` — tenant-scoped in-app notification with type, title, message, severity, status (unread/read), sourceType/sourceId, metadata, timestamps
+- Indexed by businessId+status, businessId+recipientId, businessId+type
+
+### Notification Service (`backend/src/modules/notifications/service.ts`)
+- `createNotification()` — creates notification with idempotency for same sourceType+sourceId
+- `listNotifications()` — paginated list with status/type/severity filtering
+- `getUnreadCount()` — unread notification count
+- `markAsRead()` — mark single notification as read with tenant validation
+- `markAllAsRead()` — mark all notifications as read for a business
+
+### Notification Routes
+- `GET /businesses/:id/notifications` — list with pagination and filtering
+- `GET /businesses/:id/notifications/unread-count` — unread count
+- `POST /businesses/:id/notifications` — create notification
+- `POST /businesses/:id/notifications/:id/read` — mark as read
+- `POST /businesses/:id/notifications/read-all` — mark all as read
+
+### Event Integration (`backend/src/modules/notifications/handler.ts`)
+Event-driven notifications for high-value P0 events:
+- `INSIGHT_CREATED` → notification with severity mapping
+- `BOOKING_CREATED` → booking created notification
+- `BOOKING_CANCELLED` → booking cancelled notification
+- `PAYMENT_PAID` → payment received notification
+- `ORDER_COMPLETED` → order completed notification
+
+Integrated via the existing `dispatchEvent()` pipeline in the automation dispatcher.
+### Action Registry
+- `CREATE_NOTIFICATION` action registered in Action Registry (approvalRequired: false)
+- Automation engine can create notifications through the Action Registry
+### Frontend
+- **Notification Bell** (`components/notifications/NotificationBell.tsx`) — bell icon in Topbar with unread count badge, dropdown with recent notifications, mark read, mark all read
+- **Notifications Page** (`/dashboard/notifications`) — full notification list with filter (all/unread/read), severity indicators, mark read, mark all read, empty/loading states
+- **Sidebar** — Notifications link added to navigation
+### Tests
+- **Backend:** 13 tests: CRUD, filtering, mark read, mark all read, unread count, tenant isolation, event handler integration, idempotency, authentication, action registry, malicious metadata safety, empty state
+- **Playwright:** API lifecycle tests + UI navigation tests
+### Security
+- All operations require authentication
+- Tenant isolation enforced on all notification operations
+- Notification content is data, not executable code
+- Metadata is safely stored as JSON string
+- Cross-tenant notification access is rejected
+### Idempotency
+- `createNotification()` checks for existing notification with same sourceType+sourceId before creating duplicate
+- Prevents duplicate notifications from event retries
+## What Is NOT Implemented (Future)
+
+- WhatsApp provider integration
+- Email provider integration
+- SMS provider integration
+- Push/Web Push notifications
+- Notification templates
+- Notification preferences per user
+- Notification channels (multi-channel delivery)
+- External provider adapters
+- Retry infrastructure for failed deliveries
+- Mass notification system
+- Notification scheduling
+- Notification analytics
+- Customer-facing notifications

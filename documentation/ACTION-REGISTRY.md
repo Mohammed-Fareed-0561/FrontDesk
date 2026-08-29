@@ -2107,3 +2107,45 @@ AI may plan.
 But:
 
 The Action Registry decides what FrontDesk is actually allowed to do.
+
+---
+
+# P0 Implementation Status
+
+**Last Updated:** 2026-08-29
+
+## Registered Actions (P0)
+
+| Action Key | Name | Approval Required |
+|------------|------|-------------------|
+| CREATE_PRODUCT | Create Product | No |
+| UPDATE_PRODUCT | Update Product | Yes |
+| DELETE_PRODUCT | Delete Product | Yes |
+| PUBLISH_WEBSITE | Publish Website | No |
+| CREATE_OFFER | Create Offer | No |
+
+## Schema
+
+- `ActionDefinition` — registers available actions with key, name, description, inputSchema, permissionScope, approvalRequired
+- `ActionExecution` — records each action invocation with businessId, status, inputPayload, resultPayload, approval reference
+- `ApprovalRequest` — tracks approval workflow (pending/approved/rejected/expired)
+
+## How Automations Use the Action Registry
+
+Automation actions must reference registered ActionDefinition keys:
+
+```json
+{
+  "actionsConfig": [
+    { "actionKey": "CREATE_PRODUCT", "params": { "name": "Auto-created product" } }
+  ]
+}
+```
+
+The automation engine:
+1. Looks up ActionDefinition by actionKey
+2. Creates ActionExecution record
+3. If approvalRequired → creates ApprovalRequest, waits for human approval
+4. If not approvalRequired → executes action directly
+5. Records result in ActionExecution
+6. Emits audit log

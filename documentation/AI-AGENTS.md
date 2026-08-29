@@ -2912,3 +2912,69 @@ Business
 238. Final Principle
 
 FrontDesk should give small businesses access to capabilities that previously required multiple employees, software systems, or technical specialists — while keeping the business owner in control.
+
+---
+
+# P0 Implementation Status
+
+**Last Updated:** 2026-08-29
+
+## What Is Implemented
+
+### Automation Engine (NOT AI Agent)
+
+The P0 implementation is a **deterministic automation engine**, not an AI agent. Key distinction:
+
+- **Automation**: Rule-based, deterministic. "When X happens, do Y."
+- **AI Agent**: Goal-oriented, reasoning. "Handle customer enquiries intelligently."
+
+P0 implements automations only. AI agents are future scope.
+
+### How Automations Relate to AI
+
+AI may **recommend** automations:
+
+```text
+AI Copilot:
+"You receive many unanswered enquiries.
+ Would you like to create an automation
+ to acknowledge new enquiries?"
+
+[Create Automation]
+```
+
+But the automation itself must be:
+1. Reviewed by the business owner
+2. Configured with trigger, conditions, actions
+3. Enabled explicitly by the owner
+4. Passing through the Action Registry
+
+AI must NOT silently create or enable automations.
+
+### Action Registry (Shared with Future Agents)
+
+The Action Registry is shared between automations and future AI agents:
+
+```text
+                    Action Registry
+                         ↑
+             ┌───────────┼───────────┐
+             │           │           │
+       Automations    Copilot    [Agents]
+                                  (future)
+```
+
+This ensures a consistent safety boundary regardless of who requests the action.
+
+### What Is NOT Implemented (P0)
+
+- Autonomous AI agents
+- Multi-agent orchestration
+- Agent conversation management
+- Agent tool calling (beyond Action Registry)
+- Agent memory/reasoning
+- Agent evaluation/testing
+- Agent-to-agent communication
+- External notification providers (WhatsApp, email)
+- Full approval workflow UI
+- Agent deployment/monitoring dashboard

@@ -22,6 +22,7 @@ export const SUPPORTED_TRIGGERS = new Set([
 export const SAFE_ACTIONS = new Set([
   "CREATE_PRODUCT",
   "CREATE_OFFER",
+  "CREATE_NOTIFICATION",
 ]);
 
 // Actions that require approval — maps to ActionDefinition.approvalRequired
@@ -361,6 +362,19 @@ async function executeAction(
           discountValue: params.discountValue || 0,
           status: "active",
         },
+      });
+      break;
+    }
+    case "CREATE_NOTIFICATION": {
+      const { createNotification } = await import("../notifications/service.js");
+      await createNotification({
+        businessId,
+        type: params.type || "AUTOMATION",
+        title: params.title || "Automation Notification",
+        message: params.message || "",
+        severity: params.severity || "info",
+        sourceType: "automation",
+        sourceId: executionId,
       });
       break;
     }

@@ -2876,3 +2876,88 @@ a developer,
 a programmer,
 an automation specialist,
 a complex workflow platform.
+
+---
+
+# P0 Implementation Status
+
+**Last Updated:** 2026-08-29
+
+## What Is Implemented (P0)
+
+The following P0 automation engine features are implemented and verified:
+
+### Schema (Prisma)
+- `Automation` — business-scoped automation definition with trigger/condition/action JSON configs
+- `AutomationStep` — ordered steps within an automation
+- `AutomationRun` — execution record with status, event reference, context, and error
+- `DomainEvent` — business events that trigger automations
+- `EventDelivery` — tracks consumer delivery status per event
+- `ActionDefinition` — registered actions with approval flags
+- `ActionExecution` — records each action execution with input/output
+- `ApprovalRequest` — approval workflow for high-risk actions
+- `AuditLog` — audit trail for all automation operations
+
+### Backend Engine (`backend/src/modules/automations/`)
+- **engine.ts** — Core automation processing: trigger matching, condition evaluation, config validation, action execution via Action Registry
+- **dispatcher.ts** — Event dispatch: matches domain events to active automations, manual trigger support
+- **hook.ts** — `emitAndDispatch()` helper for routes to create domain events and dispatch to automations
+- **automations.routes.ts** — REST API: CRUD, enable/disable, manual trigger, run history, supported triggers list
+
+### Triggers (P0)
+Supported trigger events:
+- `ENQUIRY_CREATED`
+- `ORDER_CREATED`, `ORDER_COMPLETED`, `ORDER_CONFIRMED`, `ORDER_CANCELLED`
+- `PAYMENT_CREATED`, `PAYMENT_PAID`
+- `BOOKING_CREATED`, `BOOKING_COMPLETED`, `BOOKING_CANCELLED`
+- `INSIGHT_CREATED`
+- `PRODUCT_CREATED`, `PRODUCT_UPDATED`
+- `MEMORY_CREATED`
+
+### Conditions (P0)
+Simple deterministic conditions with operators:
+- `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`
+- All conditions must pass (AND logic)
+- No arbitrary code execution
+
+### Actions (P0)
+Safe actions (no approval required):
+- `CREATE_PRODUCT` — creates a product in the business catalog
+- `CREATE_OFFER` — creates an offer in the business catalog
+
+Approval-required actions:
+- `UPDATE_PRODUCT` — requires human approval before execution
+- `DELETE_PRODUCT` — requires human approval before execution
+
+### Security
+- Config validation rejects: `exec`, `eval`, `Function`, `require`, `shell`, `system`, `__proto__`, `fetch`, `http`
+- Automation config is data, not executable code
+- No arbitrary JavaScript/SQL/shell execution
+- Tenant isolation enforced on all operations
+
+### Frontend (`/dashboard/automations`)
+- Automation list with status badges
+- Create automation form (name, description, trigger, condition, action)
+- Enable/disable toggle
+- Manual trigger button
+- Run history expand/collapse
+- Empty, loading, and error states
+
+### Tests
+- **Backend:** 23 tests covering CRUD, triggers, conditions, idempotency, approval, audit, tenant isolation, security, run status
+- **Playwright:** API-based E2E tests + UI navigation tests for create flow
+
+## What Is NOT Implemented (Future)
+
+- Visual workflow editor
+- Branching/conditional logic (if/else)
+- Delay/wait steps
+- Scheduled/cron triggers
+- External notification providers (WhatsApp, email, push)
+- Multi-step action chains with branching
+- Automation templates
+- Automation analytics/attribution
+- AI-generated automations
+- Full approval workflow UI
+- Retry/backoff logic
+- Rate limiting per automation

@@ -1,5 +1,6 @@
 import { prisma } from "../../infrastructure/database/client.js";
 import { processAutomation, SUPPORTED_TRIGGERS } from "./engine.js";
+import { handleNotificationEvent } from "../notifications/handler.js";
 
 /**
  * Dispatch a domain event to matching automations.
@@ -11,6 +12,38 @@ import { processAutomation, SUPPORTED_TRIGGERS } from "./engine.js";
 export async function dispatchEvent(eventId: string): Promise<number> {
   const event = await prisma.domainEvent.findUnique({ where: { id: eventId } });
   if (!event || !event.businessId) return 0;
+
+  // Process notifications for supported events (regardless of automation match)
+  // Reliability P0: await notification handler, record failures observably (audit), never throw to caller
+  let payload: Record<string, any> = {};
+  try { payload = JSON.parse(event.payload); } catch { payload = {}; }
+  try {
+    await handleNotificationEvent(event.businessId, event.eventType, payload, event.aggregateId || undefined);
+  } catch (e: any) {
+    // Handler already records NOTIFICATION_HANDLER_FAILED audit safely; this outer catch ensures
+    // fire-and-forget is removed and failures are not silent. Never propagate to break originating operation.
+    let raw = (e?.message || "unknown error").toString();
+    raw = raw.replace(/sk-[a-zA-Z0-9]{10,}/g, "[REDACTED]");
+    raw = raw.replace(/Bearer\s+[a-zA-Z0-9._-]+/gi, "Bearer [REDACTED]");
+    raw = raw.replace(/api[_-]?key\s*[:=]\s*[a-zA-Z0-9._-]+/gi, "api_key=[REDACTED]");
+    const safeMsg = raw.slice(0, 200);
+    console.error(`[dispatchEvent] notification handler failed for ${event.eventType}:`, safeMsg);
+    try {
+      const { prisma: auditPrisma } = await import("../../infrastructure/database/client.js");
+      await auditPrisma.auditLog.create({
+        data: {
+          businessId: event.businessId,
+          actorType: "system",
+          action: "NOTIFICATION_HANDLER_FAILED",
+          entityType: "notification",
+          entityId: event.aggregateId || null,
+          metadata: JSON.stringify({ eventType: event.eventType, error: safeMsg }),
+        },
+      });
+    } catch {
+      // Audit failure must not break dispatch
+    }
+  }
 
   // Only process supported trigger events
   if (!SUPPORTED_TRIGGERS.has(event.eventType)) return 0;
