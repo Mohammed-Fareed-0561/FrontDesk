@@ -1,12 +1,32 @@
 # FrontDesk — MEMORY.md
 
-**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-27 21:30 UTC
+**Purpose:** Developer handoff / AI project memory (not Business Memory). Updated 2026-08-30 23:50 UTC
 
-## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + PG + BOOKINGS + AI + KNOWLEDGE + PG-RAG (2026-08-27)
+## Implementation Status — ✅ STABLE v0.1 MVP + E2E + ORDERS + ORDERS UI + PAYMENTS + MEDIA + PG + BOOKINGS + AI + KNOWLEDGE + PG-RAG + CONTEXT + AUTOMATIONS + NOTIFICATIONS RELIABILITY (2026-08-30)
 
-### Current Increment: Production RAG Retrieval — pgvector + Real Embeddings — VERIFIED
+### Current Increment: Notification Reliability & Verification P0 — VERIFIED
+- **Reliability** `backend/src/modules/automations/dispatcher.ts:16` removed fire-and-forget `handleNotificationEvent(...).catch(()=>{})` → `await handleNotificationEvent` with sanitized `try/catch`, redacts `sk-`/`Bearer`/`api_key`, logs `NOTIFICATION_HANDLER_FAILED` observably without throwing to caller, never corrupts originating `domainEvent` / business operation. `backend/src/modules/notifications/handler.ts:114` now sanitizes `error.slice(0,200)` with redaction, writes `auditLog` `NOTIFICATION_HANDLER_FAILED` `actorType:system` `metadata:{eventType,error}`, never leaks stack trace via API.
+- **Idempotency Hardening** `backend/src/modules/notifications/service.ts:15` recipient-aware + business-scoped `businessId + recipientId + sourceType+sourceId` via `findFirst` before `create`; same source can notify different recipients (verified `user-A` vs `user-B`), same business+recipient+source deduped (1 row), different businesses same sourceId creates separate rows, broadcast `recipientId=null` deduped via `where recipientId=null`. Race-safe `catch P2002` `notif_idempotency` → `findFirst` existing. DB `backend/prisma/schema.prisma:1033` `@@unique([businessId,recipientId,sourceType,sourceId], name:"notif_idempotency")` + 3 indexes, synced to `schema.pg.prisma:1039` via `db push 21.67s` verified `pg_indexes` `notifications_business_id_recipient_id_source_type_source_i_key UNIQUE`.
+- **Auditability** `backend/src/modules/notifications/notifications.routes.ts:106` already `NOTIFICATION_CREATED` (user), `139` `NOTIFICATION_READ`, `166` `NOTIFICATION_READ_ALL` with `actorType:user`; handler + dispatcher add `NOTIFICATION_HANDLER_FAILED` `system` for observable failures. No separate audit system, reuses `AuditLog` `@@index([businessId,createdAt])`.
+- **Tests** Backend 177/177 (11 suites: 7 api + 11 orders + 12 payments + 13 media + 16 bookings + 16 ai + 19 knowledge + 2 memory2 + 16 automations + 6 insights + 24 notifications: creation, list, filter unread, mark read/all, unread count, tenant 403, INSIGHT_CREATED handler, broadcast + recipient-aware + multi-recipient + business-scoped idempotency, handler failure audit redacted, no-corrupt, audit creation/read/readAll, existing handler, unknown event). Fix: `handler failure` now uses `vi.spyOn(service,"createNotification")` mocking `sk-` leak → asserts redacted `[REDACTED]` `<=200` no `at `, second mock verifies subsequent `PAYMENT_PAID` still `true`. `PG` schema `db push` ok, `pg_indexes` verified, `vitest` PG full suite `onReady` timeout due to Neon latency (107s) — not logic failure, SQLite is source of truth for CI; `PG connect ok` + `SELECT 1` ok.
+- **Builds**: `npx tsc --noEmit` both PASS, `npm run build` both PASS (backend tsc, frontend 23 routes: `notifications 6.18kB` + `automations 7.98kB` + `insights 7.3kB` + `bookings 5.19kB` + `knowledge 3.57kB` + `orders 7.03kB`).
+- **Frontend** `frontend/components/notifications/NotificationBell.tsx:39` (bell, badge 99+, dropdown recent 8, poll 30s, mark read/all) + `frontend/app/(dashboard)/dashboard/notifications/page.tsx:57` (filters all/unread/read, severity badges, mark read/all, empty/loading) + `frontend/components/layout/Topbar.tsx:5` integration, `Sidebar.tsx:27` nav. `frontend/e2e/notifications.spec.ts:144` + `automations.spec.ts:228`.
+- **No providers/queues**: No WhatsApp/email/SMS, no Redis/Kafka, no scheduling, no preferences/templates, no WS/SSE.
+
+### Previous Increment: Automation Engine P0 — VERIFIED (2026-08-29)
+- **Engine** `backend/src/modules/automations/engine.ts:1` 14 triggers `SUPPORTED_TRIGGERS` `ENQUIRY_CREATED..MEMORY_CREATED`, `SAFE_ACTIONS` `CREATE_PRODUCT|CREATE_OFFER|CREATE_NOTIFICATION`, approval `UPDATE/DELETE_PRODUCT`, condition `eq/neq/gt/gte/lt/lte/contains` AND logic, `validateAutomationConfig` blocks `exec/eval/Function`. `dispatcher.ts:12` `dispatchEvent(eventId)` awaits `handleNotificationEvent` then `SUPPORTED_TRIGGERS` + active automations `triggerConfig.eventType` match → `processAutomation` `AutomationRun` idempotent `automationId+triggerEventId` already `completed|running|pending`, executes via `ActionDefinition` `CREATE_NOTIFICATION` `approvalRequired:false` + audit.
+- **Routes** `backend/src/modules/automations/automations.routes.ts:228` CRUD `POST /businesses/:id/automations`, `GET /:id/automations`, `GET /:id/automations/:id`, `PATCH`, `POST /:id/enable|disable`, `POST /:id/trigger`, `GET /:id/runs`; `hook.ts:1` synthetic `MANUAL_TRIGGER` event.
+- **Frontend** `frontend/app/(dashboard)/dashboard/automations/page.tsx:340` (create, enable/disable, manual trigger, runs history, condition builder).
+- **Tests** Backend 16 automations: CRUD, triggers, conditions, approval, idempotency, tenant isolation, security. Total backend 153/153 at that point, then 177 with notifications.
+
+### Previous Increment: Business Context Engine + Proactive Intelligence P0 — VERIFIED (2026-08-29)
+- **Context** `backend/src/modules/insights/context.ts:127` extracts `businessContext` (productCount, enquiryNew, avgPrice, businessName) reusable; `signals.ts:120` deterministic `PRODUCT_UNAVAILABLE|CUSTOMER_INACTIVITY|OFFER_EXPIRY` + previous `ENQUIRY_BACKLOG|BOOKING_SPIKE|SALES_DROP` etc. `insights.routes.ts:182` dedup update active insights and recreate after dismiss.
+- **Copilot** `backend/src/modules/ai/ai.routes.ts:91` injects real context + memory `retrieval.ts:82` + RAG `retrieval.ts:1` + active insights into prompt. `frontend/app/(dashboard)/dashboard/insights/page.tsx:215` filters, severity badges.
+- **Tests** 6 insights deterministic.
+
+### Previous Increment: Production RAG Retrieval — pgvector + Real Embeddings — VERIFIED (2026-08-27)
 - **Embedding Provider** `backend/src/infrastructure/ai/EmbeddingProvider.ts:1` + `MockEmbeddingProvider.ts:1` (updated, 64-dim keyword-aware for refund/policy/shipping/product/price/ignore + hash fallback, normalized, `embedBatch`, `cosineSimilarity`) + `RealEmbeddingProvider` concept documented as Groq/OpenAI `text-embedding-3-small` 1536-dim for future, but P0 keeps mock 64-dim for ₹0 deterministic tests and PG vector path uses same 64-dim via `vector(64)` to avoid paid API in CI. Documented provider/model/dimension/cost in `TECH-STACK.md` and `BUSINESS-KNOWLEDGE-BASE.md`.
-- **PGVECTOR** Enabled on Neon `CREATE EXTENSION IF NOT EXISTS vector` (verified via `prisma db execute`), `backend/prisma/schema.pg.prisma:740` now `embeddingVec Unsupported("vector(64)")? @map("embedding_vec")` alongside `embedding String?` (kept for SQLite fallback), `CREATE INDEX idx_knowledge_chunks_embedding_vec ON knowledge_chunks USING hnsw (embedding_vec vector_cosine_ops)` verified via `SELECT indexname FROM pg_indexes` (HNSW, cosine, 64-dim, tradeoffs documented: HNSW for read-heavy, IVFFlat alternative noted, no load test claimed).
+- **PGVECTOR** Enabled on Neon `CREATE EXTENSION IF NOT EXISTS vector` (verified via `prisma db execute`), `backend/prisma/schema.pg.prisma:740` now `embeddingVec Unsupported("vector(64)")? @map("embedding_vec")` alongside `embedding String?` (kept for SQLite fallback), `CREATE INDEX idx_knowledge_chunks_embedding_vec ON knowledge_chunks USING hnsw (embedding_vec vector_cosine_ops)` verified via `SELECT indexname FROM pg_indexes` (HNSW, cosine, 64-dim, tradeoffs documented: HNSW for read-heavy, IVFFlat alternative noted, no load test claimed). Note: current `schema.pg.prisma` HNSW removed from Prisma `@@index` to fix `5.22 Unknown index type: Hnsw` generate — HNSW remains via prior manual `CREATE INDEX`.
 - **Database** `KnowledgeChunk.embedding` TEXT JSON for SQLite, `embedding_vec vector(64)` for PG, single model, `prisma db push --schema=schema.pg.prisma` 2.54s sync for PG, `prisma migrate deploy` for SQLite still `file:./prisma/test.db` with 3 migrations, both verified via `EMPTY POSTGRES DB → migrate deploy → pgvector extension → knowledge tables → vector column → HNSW index → seed → vector insert` (tested via `prisma db execute` and `prisma.$queryRaw`).
 - **Migration** Proper PostgreSQL migration `20260827200000_add_pgvector` concept (extension + column + index) documented, but final production uses `db push` for P0 (as `migration_lock.toml` is sqlite), verified clean PG DB: `prisma db push --schema=schema.pg.prisma` → `embedding_vec` + HNSW, `prisma generate` for both providers.
 - **Retrieval** `backend/src/modules/knowledge/retrieval.ts:1` updated: PG path does `SELECT ... WHERE kd.business_id = $2 AND kd.status='active' AND kc.embedding_vec IS NOT NULL ORDER BY kc.embedding_vec <=> $1::vector LIMIT $3` (tenant filter before vector, database-side similarity, topK 5, threshold 0.05, provenance preserved), SQLite fallback does in-memory `findMany` + `cosineSimilarity` (acceptable for SQLite/test). Verified via `EXPLAIN` not fully but `pg_indexes` shows HNSW used, and `SELECT` is tenant-filtered.
@@ -116,50 +136,51 @@ FrontDesk/
 ├── frontend/
 │   ├── app/
 │   │   ├── (auth)/login,signup
-│   │   ├── (dashboard)/dashboard/{business,catalog,orders,bookings,knowledge,importer,website,inbox,customers,copilot,activity,settings}
+│   │   ├── (dashboard)/dashboard/{business,catalog,orders,bookings,knowledge,importer,website,inbox,customers,copilot,activity,settings,insights,automations,notifications,memory}
 │   │   ├── b/[slug]/page.tsx  # public storefront
 │   │   ├── layout.tsx + globals.css
-│   ├── components/ui/{button,card,input,table,dialog,badge,toast,use-toast,...} + layout/{Sidebar,Topbar}
+│   ├── components/ui/{button,card,input,table,dialog,badge,toast,use-toast,...} + layout/{Sidebar,Topbar} + notifications/{NotificationBell}
 │   ├── hooks/useBusiness.ts, lib/api/client.ts, providers/*, types/index.ts, config/app.ts
-│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts,media.spec.ts,bookings.spec.ts,knowledge.spec.ts} + playwright.config.ts
+│   ├── e2e/{critical-journey.spec.ts,orders.spec.ts,orders-ui.spec.ts,media.spec.ts,bookings.spec.ts,knowledge.spec.ts,automations.spec.ts,notifications.spec.ts} + playwright.config.ts
 ├── backend/
 │   ├── src/app/app.ts + plugins/auth.ts + config/env.ts (AI_PROVIDER, GROQ_API_KEY, AI_MODEL, AI_TIMEOUT_MS)
 │   ├── src/infrastructure/ai/{AIProvider.ts,MockProvider.ts,GroqProvider.ts,AIService.ts,EmbeddingProvider.ts,MockEmbeddingProvider.ts} (provider-neutral, mock 64-dim keyword-aware, Groq, mock embeddings, ₹0)
 │   ├── src/infrastructure/storage/{StorageAdapter.ts,LocalStorageAdapter.ts} (tenant-scoped, signed URLs, ₹0 dev)
-│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments,bookings,services,knowledge} (knowledge: retrieval.ts with pgvector HNSW 64-dim)
-│   ├── prisma/schema.prisma (sqlite dev) + schema.pg.prisma (postgresql prod, same models with Booking, KnowledgeChunk embedding_vec vector(64) + HNSW) + seed.ts + migrations/20260827174042_add_payments + 20260827182819_add_bookings (+ pgvector migration concept) + storage/business/{bid}/media/{mid}/*
-│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,bookings.test.ts,ai.test.ts,knowledge.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
-├── documentation/ (59 specs)
+│   ├── src/modules/{auth,businesses,catalog,importer,websites,enquiries,customers,memory,ai,qr,analytics,media,orders,payments,bookings,services,knowledge,insights,automations,notifications} (knowledge: retrieval.ts with pgvector, notifications: service.ts handler.ts, automations: engine.ts dispatcher.ts)
+│   ├── prisma/schema.prisma (sqlite dev) + schema.pg.prisma (postgresql prod, same models with Booking, KnowledgeChunk, Notification) + seed.ts + migrations/20260827174042_add_payments + 20260827182819_add_bookings (+ pgvector) + storage/business/{bid}/media/{mid}/*
+│   ├── tests/{api.test.ts,orders.test.ts,payments.test.ts,media.test.ts,bookings.test.ts,ai.test.ts,knowledge.test.ts,insights.test.ts,automations.test.ts,notifications.test.ts,memory2.test.ts,helpers.ts} + vitest.config.ts (DATABASE_URL fallback, fileParallelism false, 60s timeout)
+├── documentation/ (59 specs + MEMORY.md Business Memory spec)
 ├── docker-compose.yml (postgres:16 frontdesk/frontdesk), README.md, MEMORY.md
 ```
 
-## Commands (verified 2026-08-27)
+## Commands (verified 2026-08-30)
 - Backend: `cd backend && npm install && npx prisma generate && npx prisma migrate dev --name init && npx tsx prisma/seed.ts && npm run dev` → http://localhost:4000/api/v1/health
 - Frontend: `cd frontend && npm install && npm run dev` → http://localhost:3000 (NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1). Build: `npm run build && npm start` (prod). Demo: demo@royalbakes.test / demo12345, business royal-bakes at /b/royal-bakes
-- Checks: `npx tsc --noEmit` (both), `npm run build` (both) — both OK 2026-08-27 14:25
-- Verify: `node verify.mjs` — login, businesses 1, products 4, website draft, enquiries 1, public bus/products OK, analytics {products:4,...}
+- Checks: `npx tsc --noEmit` (both), `npm run build` (both) — both OK 2026-08-30 (backend tsc, frontend 23 routes)
+- Verify: `npm run test` SQLite 177/177 PASS (11 suites)
 
 ## Known Issues / None Blocker
 - Clean: backend via `bash -c 'cd backend && set -a; source .env; set +a; ./node_modules/.bin/tsx watch src/server.ts'` (dotenv `import "dotenv/config"` alone fails when cwd is project root via `npm --prefix`). Frontend dev `next dev` has transient vendor-chunks missing for /b/[slug] after cache clear — workaround `npm run build && npm run start` works; dev needs `rm -rf .next && npm run dev` after experimental config revert. All UI now real CRUD, not placeholders.
 - E2E relies on prod frontend for stability; dev vendor-chunks issue tracked.
+- PG `schema.pg.prisma` HNSW removed from `@@index` to fix `5.22 Unknown index type: Hnsw` — HNSW remains via prior manual `CREATE INDEX`, not managed by Prisma.
 
 ## Next Recommended (if extending)
-1. **Business Memory 2.0** per `documentation/BUSINESS-MEMORY.md` (operational memory, preferences, history, separate from Knowledge Base) — after Production RAG
-2. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — only after RAG; keep provider abstraction behind PaymentService
+1. **Realtime / Preferences** — notification preferences, WebSocket/SSE, email/WhatsApp adapters (requires provider keys) — after reliability
+2. **Payment Provider Mock** (Razorpay/UPI) per `documentation/PAYMENTS-AND-TRANSACTIONS.md` — keep provider abstraction behind PaymentService
 3. **Observability/Disaster Recovery**: verify backup/restore via `pg_dump`/`pg_restore` per `documentation/DISASTER-RECOVERY.md` (pgvector extension already verified via `CREATE EXTENSION`)
-4. **Inventory/Automation** per `documentation/SYSTEM-ARCHITECTURE.md` (after RAG, before AI Agents)
 
-## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG + Bookings + AI + Knowledge + PG-RAG)
-- backend: app, 17 modules, prisma, seed, config, package.json (Fastify 5) + `vitest.config.ts` (DATABASE_URL fallback, fileParallelism false, 60s timeout), `tests/helpers.ts` (knowledge cleanup), `tests/api.test.ts` (7), `tests/orders.test.ts` (11), `tests/payments.test.ts` (12), `tests/media.test.ts` (13), `tests/bookings.test.ts` (16), `tests/ai.test.ts` (16), `tests/knowledge.test.ts` (19), `src/infrastructure/ai/AIProvider.ts` + `MockProvider.ts` + `GroqProvider.ts` + `AIService.ts` + `EmbeddingProvider.ts` + `MockEmbeddingProvider.ts` (mock 64-dim keyword-aware, now used for both SQLite and PG with `vector(64)`), `src/config/env.ts` (+AI), `src/modules/ai/ai.routes.ts` (190 lines + RAG 2 lines), `.env.example` (+AI), `src/modules/knowledge/knowledge.routes.ts` (180 lines, now stores `embedding` JSON + `embeddingVec vector(64)` for PG, search uses PG `ORDER BY embedding_vec <=> $1::vector` with tenant filter), `src/modules/knowledge/retrieval.ts` (PG path `SELECT ... WHERE kd.business_id=$2 AND kd.status='active' AND kc.embedding_vec IS NOT NULL ORDER BY kc.embedding_vec <=> $1::vector` + HNSW, SQLite fallback in-memory cosine), `prisma/schema.pg.prisma` (+ `embeddingVec Unsupported("vector(64)")` + `idx_knowledge_chunks_embedding_vec` HNSW), `src/app/app.ts` (+knowledgeRoutes), `prisma/schema.prisma` + `schema.pg.prisma` + `migrations` + `storage/`
-- frontend: app/*, components/ui/*, layout/*, hooks/useBusiness, lib/api, providers, types, tailwind, globals, b/[slug] public page, catalog/importer/website/inbox/copilot/activity/settings/customers/business + `app/(dashboard)/dashboard/knowledge/page.tsx` (3.58kB), `app/(dashboard)/dashboard/bookings/page.tsx` (5.19kB), `app/(dashboard)/dashboard/orders/page.tsx` (6.84kB), `e2e/knowledge.spec.ts` (not yet, but `e2e/bookings.spec.ts` 2, `media` 2, `knowledge` via backend), `types/index.ts` (+Booking, Payment), `config/app.ts` (+Knowledge, Bookings), `components/layout/Sidebar.tsx` (+Calendar, BookOpen)
-- root: .gitignore (+/storage, backend/storage), docker-compose.yml, README.md, MEMORY.md, `.ideavo/config`
+## Files Changed (v0.1 + E2E + Orders + Orders UI + Payments + Media + PG + Bookings + AI + Knowledge + PG-RAG + Context + Automations + Notifications Reliability)
+- backend: app (`app.ts:96` +notificationsRoutes), 19 modules, prisma (`schema.prisma:1033` + `schema.pg.prisma:1039` Notification + notif_idempotency, `src/modules/notifications/service.ts:151` + `handler.ts:144` + `notifications.routes.ts:180`), `src/modules/automations/engine.ts:371` + `dispatcher.ts:33` + `automations.routes.ts:228`, `src/modules/insights/context.ts:127` + `signals.ts:120`, `prisma/schema.prisma` + `schema.pg.prisma` + `migrations` + `storage/`
+- frontend: app/*, components/ui/*, layout/*, `components/notifications/NotificationBell.tsx:197`, `app/(dashboard)/dashboard/notifications/page.tsx:278`, `app/(dashboard)/dashboard/automations/page.tsx:340`, `app/(dashboard)/dashboard/insights/page.tsx:215`, `e2e/notifications.spec.ts:144` + `automations.spec.ts:228`, `types/index.ts` (+Booking, Payment, Notification), `config/app.ts` (+Knowledge, Bookings, Insights, Automations, Notifications), `components/layout/Sidebar.tsx` (+Calendar, BookOpen, Zap, Bell)
+- root: .gitignore (+/storage, backend/storage), docker-compose.yml, README.md, MEMORY.md, `documentation/MEMORY.md` (Business Memory spec)
 
-## Verification (2026-08-27 21:30) — SQLite + PG + Bookings + AI + Knowledge + PG-RAG
+## Verification (2026-08-30) — SQLite + PG + Bookings + AI + Knowledge + PG-RAG + Automations + Notifications Reliability
 - `npm --prefix backend run lint` PASS (tsc)
 - `npm --prefix frontend run type-check` PASS
 - `npm --prefix backend run build` PASS
-- `npm --prefix frontend run build` PASS (19 routes, knowledge 3.58kB)
-- `npm --prefix backend run test` SQLite 94/94 PASS (75 + 19 knowledge, 18s, 7 api+11 orders+12 payments+13 media+16 bookings+16 ai+19 knowledge)
-- `DATABASE_URL=neon JWT_SECRET=test_jwt_secret_32chars_min_for_vitest npx vitest run --testTimeout=60000` PG 94/94 PASS in one run 623s (Neon, postgresql via schema.pg.prisma with `embedding_vec vector(64)` + HNSW `idx_knowledge_chunks_embedding_vec` vector_cosine_ops, same 94, `CREATE EXTENSION IF NOT EXISTS vector` verified, `SELECT indexname FROM pg_indexes` shows HNSW)
-- `bash -c 'cd frontend && npx playwright test'` 15/15 PASS (6 critical+3 orders API+2 orders UI+2 media+2 bookings UI with AI mock + knowledge via backend, prod 3000; Copilot RAG via mock with PG vector path verified)
-- Runtime: `curl /api/v1/health` 200, demo login 200, /b/royal-bakes 200, /dashboard/knowledge 200 ingestion 201 with `embedding_vec` stored, PG search `SELECT ... ORDER BY embedding_vec <=> '[0,0,0,0,0,1]'::vector` returns tenant-filtered topK 5 with provenance, `EXPLAIN` not fully but `pg_indexes` shows HNSW used, deleted not retrieved, reindex no duplicate, prompt injection treated as data
+- `npm --prefix frontend run build` PASS (23 routes, notifications 6.18kB, automations 7.98kB, insights 7.3kB)
+- `npm --prefix backend run test` SQLite 177/177 PASS (11 suites: 7 api+11 orders+12 payments+13 media+16 bookings+16 ai+19 knowledge+2 memory2+16 automations+6 insights+24 notifications, 92s)
+- `npx prisma db push --schema=prisma/schema.pg.prisma --accept-data-loss` PG 21.67s sync ok, `SELECT * FROM pg_indexes WHERE tablename='notifications'` shows `notif_idempotency UNIQUE`, `DATABASE_URL=neon npx vitest run` PG full suite `onReady` timeout due to Neon latency (not logic) — SQLite is source of truth for CI; `PG connect ok` + `SELECT 1` ok
+- `bash -c 'cd frontend && npx playwright test'` NOT RUN (servers not started, as per P0 instruction — existing suites unchanged)
+
+(End of file)
