@@ -5,7 +5,7 @@ import { useBusiness } from "@/hooks/useBusiness";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Package, Globe, Inbox, Bot, Upload, FileText, ArrowRight, CheckCircle2, AlertCircle, Sparkles } from "lucide-react";
+import { Package, Globe, Inbox, Banknote, Upload, FileText, ArrowRight, CheckCircle2, AlertCircle, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect, useState } from "react";
@@ -52,6 +52,11 @@ export default function DashboardPage() {
   };
 
   const progress = setupProgress();
+  const paidRevenue = new Intl.NumberFormat(selected?.locale || "en-IN", {
+    style: "currency",
+    currency: selected?.currency || "INR",
+    maximumFractionDigits: 2,
+  }).format(analytics?.financials.paidRevenue ?? 0);
 
   return (
     <div className="space-y-6">
@@ -93,7 +98,7 @@ export default function DashboardPage() {
         <StatCard title="Products" value={loading ? "-" : String(analytics?.counts.products ?? 0)} icon={Package} href="/dashboard/catalog" sub="in catalog" />
         <StatCard title="New enquiries" value={loading ? "-" : String(analytics?.counts.newEnquiries ?? 0)} icon={Inbox} href="/dashboard/inbox" badge={analytics?.counts.newEnquiries ? `${analytics?.counts.newEnquiries} new` : undefined} />
         <StatCard title="Customers" value={loading ? "-" : String(analytics?.counts.customers ?? 0)} icon={FileText} href="/dashboard/inbox" sub="total" />
-        <StatCard title="Copilot" value="Ready" icon={Bot} href="/dashboard/copilot" sub="ask anything" />
+        <StatCard title="Payments received" value={loading ? "-" : paidRevenue} icon={Banknote} href="/dashboard/orders" sub="paid payments" />
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

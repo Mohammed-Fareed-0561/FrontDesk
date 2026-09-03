@@ -396,6 +396,9 @@ export type AnalyticsOverview = {
     customers: number;
     imports: number;
   };
+  financials: {
+    paidRevenue: number;
+  };
   website: { status: string; id: string } | null;
   recentEvents: { type: string; at: string }[];
 };

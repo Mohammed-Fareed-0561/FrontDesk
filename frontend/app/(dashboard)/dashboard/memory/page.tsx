@@ -200,7 +200,7 @@ export default function MemoryPage() {
           <CardContent className="py-16 text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted"><Brain className="h-6 w-6" /></div>
             <h3 className="mt-4 text-lg font-semibold">No memories yet</h3>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">Add explicit preferences like "Never discount premium products" for AI to remember.</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">Add explicit preferences like &ldquo;Never discount premium products&rdquo; for AI to remember.</p>
             <Button className="mt-6" onClick={() => setShowCreate(true)}><Plus className="mr-2 h-4 w-4" /> New memory</Button>
           </CardContent>
         </Card>

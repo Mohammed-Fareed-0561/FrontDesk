@@ -28,6 +28,7 @@ model User {
   ownedWorkspaces  Workspace[] @relation("WorkspaceOwner")
   businessesCreated Business[] @relation("BusinessCreator")
   auditLogs        AuditLog[]
+  notificationPreferences NotificationPreference[]
 
   @@map("users")
 }
@@ -126,6 +127,7 @@ model Business {
   bookings   Booking[]
   insights   Insight[]
   notifications Notification[]
+  notificationPreferences NotificationPreference[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -1027,6 +1029,7 @@ model Notification {
   metadata     String?  // JSON
   createdAt    DateTime @default(now()) @map("created_at")
   readAt       DateTime? @map("read_at")
+  archivedAt   DateTime? @map("archived_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -1034,5 +1037,24 @@ model Notification {
   @@index([businessId, status])
   @@index([businessId, recipientId])
   @@index([businessId, type])
+  @@index([businessId, archivedAt])
   @@map("notifications")
+}
+
+// Notification Preferences — per-user per-business control over which notification types are received
+model NotificationPreference {
+  id         String   @id @default(uuid())
+  businessId String   @map("business_id")
+  userId     String   @map("user_id")
+  type       String   // INSIGHT|BOOKING|ORDER|PAYMENT|SYSTEM|AUTOMATION
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId, type], name: "notif_pref_unique")
+  @@index([businessId, userId])
+  @@map("notification_preferences")
 }

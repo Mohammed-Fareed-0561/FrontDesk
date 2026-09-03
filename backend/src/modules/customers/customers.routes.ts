@@ -62,6 +62,8 @@ export async function customersRoutes(app: FastifyInstance) {
     await assertBusinessAccess(userId, businessId);
     const parsed = customerSchema.partial().safeParse(req.body);
     if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid", details: parsed.error.flatten() });
+    const existing = await prisma.customer.findFirst({ where: { id: customerId, businessId } });
+    if (!existing) throw Errors.notFound("Customer");
     const updated = await prisma.customer.update({ where: { id: customerId }, data: { name: parsed.data.name, email: parsed.data.email, phone: parsed.data.phone, status: parsed.data.status, metadata: parsed.data.metadata ? JSON.stringify(parsed.data.metadata) : undefined } as any });
     return reply.send({ success: true, data: updated });
   });
@@ -70,6 +72,8 @@ export async function customersRoutes(app: FastifyInstance) {
     const userId = (req as any).userId as string;
     const { businessId, customerId } = req.params as any;
     await assertBusinessAccess(userId, businessId);
+    const existing = await prisma.customer.findFirst({ where: { id: customerId, businessId } });
+    if (!existing) throw Errors.notFound("Customer");
     await prisma.customer.update({ where: { id: customerId }, data: { deletedAt: new Date() } });
     return reply.code(204).send();
   });

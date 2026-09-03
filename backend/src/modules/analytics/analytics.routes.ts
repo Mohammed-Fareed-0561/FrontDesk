@@ -16,17 +16,22 @@ export async function analyticsRoutes(app: FastifyInstance) {
     const userId = (req as any).userId as string;
     const { businessId } = req.params as any;
     await assertBusinessAccess(userId, businessId);
-    const [productCount, enquiryCount, enquiryNew, customerCount, importCount, website, events] = await Promise.all([
+    const [productCount, enquiryCount, enquiryNew, customerCount, importCount, paidPayments, website, events] = await Promise.all([
       prisma.product.count({ where: { businessId, deletedAt: null } }),
       prisma.enquiry.count({ where: { businessId } }),
       prisma.enquiry.count({ where: { businessId, status: "new" } }),
       prisma.customer.count({ where: { businessId } }),
       prisma.importJob.count({ where: { businessId } }),
+      prisma.payment.aggregate({
+        where: { businessId, status: "paid" },
+        _sum: { amount: true },
+      }),
       prisma.website.findFirst({ where: { businessId } }),
       prisma.domainEvent.findMany({ where: { businessId }, orderBy: { createdAt: "desc" }, take: 20 }),
     ]);
     const overview = {
       counts: { products: productCount, enquiries: enquiryCount, newEnquiries: enquiryNew, customers: customerCount, imports: importCount },
+      financials: { paidRevenue: paidPayments._sum.amount ?? 0 },
       website: website ? { status: website.status, id: website.id } : null,
       recentEvents: events.map(e => ({ type: e.eventType, at: e.createdAt })),
       // No fake analytics: only events we can reliably observe. QR scans/product views require future instrumentation.

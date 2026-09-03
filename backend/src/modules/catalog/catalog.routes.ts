@@ -24,7 +24,7 @@ const productSchema = z.object({
   sku: z.string().optional(),
   status: z.enum(["draft", "active", "archived"]).optional(),
   availability: z.enum(["available", "unavailable", "out_of_stock", "coming_soon"]).optional(),
-  stockQuantity: z.number().optional(),
+  stockQuantity: z.number().min(0).optional(),
   isFeatured: z.boolean().optional(),
 });
 
@@ -144,6 +144,8 @@ export async function catalogRoutes(app: FastifyInstance) {
     const userId = (req as any).userId as string;
     const { businessId, productId } = req.params as any;
     await assertBusinessAccess(userId, businessId);
+    const existing = await prisma.product.findFirst({ where: { id: productId, businessId, deletedAt: null } });
+    if (!existing) throw Errors.notFound("Product");
     await prisma.product.update({ where: { id: productId }, data: { deletedAt: new Date(), status: "archived" } });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "PRODUCT_DELETED", entityType: "product", entityId: productId } });
     await prisma.domainEvent.create({ data: { businessId, eventType: "PRODUCT_DELETED", aggregateType: "product", aggregateId: productId, payload: JSON.stringify({ productId }) } });

@@ -9,6 +9,7 @@ export async function createTestApp() {
 
 export async function cleanupDb() {
   const t = prisma;
+  await (t as any).notificationPreference?.deleteMany?.();
   await t.notification.deleteMany();
   await t.auditLog.deleteMany();
   await t.domainEvent.deleteMany();

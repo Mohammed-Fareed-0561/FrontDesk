@@ -1,6 +1,10 @@
 import { createNotification } from "./service.js";
 import { prisma } from "../../infrastructure/database/client.js";
 
+const AUDIT = {
+  NOTIFICATION_CREATED: "NOTIFICATION_CREATED",
+} as const;
+
 /**
  * Map of event types to notification generators.
  * Each generator returns notification input or null to skip.
@@ -99,7 +103,7 @@ export async function handleNotificationEvent(
     const result = await handler(businessId, payload);
     if (!result) return false;
 
-    await createNotification({
+    const { notification, created } = await createNotification({
       businessId,
       recipientId: payload.recipientId || undefined,
       type: result.type,
@@ -109,6 +113,31 @@ export async function handleNotificationEvent(
       sourceType: result.sourceType,
       sourceId: result.sourceId || aggregateId || "",
     });
+
+    // Audit: record NOTIFICATION_CREATED only when a new notification was actually inserted.
+    // When idempotency prevents a duplicate, skip audit to avoid duplicate records.
+    if (created) {
+      try {
+        await prisma.auditLog.create({
+          data: {
+            businessId,
+            actorType: "system",
+            action: AUDIT.NOTIFICATION_CREATED,
+            entityType: "notification",
+            entityId: notification.id,
+            afterData: JSON.stringify({
+              type: notification.type,
+              title: notification.title,
+              severity: notification.severity,
+              recipientId: notification.recipientId,
+            }),
+          },
+        });
+      } catch {
+        // Audit failure must not break event processing
+        console.error("[notification-handler] Failed to create NOTIFICATION_CREATED audit record");
+      }
+    }
 
     return true;
   } catch (err: any) {

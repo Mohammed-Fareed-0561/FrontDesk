@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { apiClient } from "@/lib/api/client";
 import { useBusiness } from "@/hooks/useBusiness";
-import { Bell, Check, CheckCheck } from "lucide-react";
+import { formatRelativeTime } from "@/lib/utils";
+import { Bell, Check, CheckCheck, Clock } from "lucide-react";
 import Link from "next/link";
 
 type Notification = {
@@ -26,6 +27,7 @@ type Notification = {
   sourceType: string | null;
   sourceId: string | null;
   createdAt: string;
+  readAt: string | null;
 };
 
 const severityColors: Record<string, string> = {
@@ -83,7 +85,9 @@ export function NotificationBell() {
         method: "POST",
       });
       setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, status: "read" } : n))
+        prev.map((n) =>
+          n.id === id ? { ...n, status: "read", readAt: new Date().toISOString() } : n
+        )
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch {
@@ -98,7 +102,7 @@ export function NotificationBell() {
         method: "POST",
       });
       setNotifications((prev) =>
-        prev.map((n) => ({ ...n, status: "read" }))
+        prev.map((n) => ({ ...n, status: "read", readAt: new Date().toISOString() }))
       );
       setUnreadCount(0);
     } catch {
@@ -150,40 +154,52 @@ export function NotificationBell() {
             No notifications
           </div>
         ) : (
-          notifications.slice(0, 8).map((n) => (
-            <DropdownMenuItem
-              key={n.id}
-              className={`flex flex-col items-start gap-1 py-2 cursor-pointer ${
-                n.status === "unread" ? "bg-muted/50" : ""
-              }`}
-              onClick={() => n.status === "unread" && handleMarkRead(n.id)}
-            >
-              <div className="flex items-center gap-2 w-full">
-                <div
-                  className={`h-2 w-2 rounded-full shrink-0 ${
-                    severityColors[n.severity] || "bg-gray-400"
-                  }`}
-                />
-                <span className="text-xs font-medium flex-1 truncate">
-                  {n.title}
-                </span>
-                {n.status === "unread" && (
-                  <Check className="h-3 w-3 text-muted-foreground shrink-0" />
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground line-clamp-1 pl-4">
-                {n.message}
-              </p>
-              <span className="text-[10px] text-muted-foreground pl-4">
-                {new Date(n.createdAt).toLocaleString("en-IN", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  day: "numeric",
-                  month: "short",
-                })}
-              </span>
-            </DropdownMenuItem>
-          ))
+          notifications.slice(0, 8).map((n) => {
+            const time = formatRelativeTime(n.createdAt);
+            const readTime = n.readAt ? formatRelativeTime(n.readAt) : null;
+            return (
+              <DropdownMenuItem
+                key={n.id}
+                className={`flex flex-col items-start gap-1 py-2 cursor-pointer ${
+                  n.status === "unread" ? "bg-muted/50" : ""
+                }`}
+                onClick={() => n.status === "unread" && handleMarkRead(n.id)}
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <div
+                    className={`h-2 w-2 rounded-full shrink-0 ${
+                      severityColors[n.severity] || "bg-gray-400"
+                    }`}
+                  />
+                  <span className="text-xs font-medium flex-1 truncate">
+                    {n.title}
+                  </span>
+                  {n.status === "unread" && (
+                    <Check className="h-3 w-3 text-muted-foreground shrink-0" />
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground line-clamp-1 pl-4">
+                  {n.message}
+                </p>
+                <div className="flex items-center gap-2 pl-4">
+                  <span className="text-[10px] text-muted-foreground">
+                    {time.relative || new Date(n.createdAt).toLocaleString("en-IN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      day: "numeric",
+                      month: "short",
+                    })}
+                  </span>
+                  {readTime && (
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                      <Clock className="h-2.5 w-2.5" />
+                      Read {readTime.relative}
+                    </span>
+                  )}
+                </div>
+              </DropdownMenuItem>
+            );
+          })
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild className="justify-center">

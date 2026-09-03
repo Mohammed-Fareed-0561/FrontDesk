@@ -12,6 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
+    "prisma:setup-pg": "tsx prisma/setup-pg.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
