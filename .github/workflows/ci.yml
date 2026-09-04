@@ -10,20 +10,6 @@ jobs:
   backend:
     name: Backend Tests & Build
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: frontdesk
-          POSTGRES_PASSWORD: frontdesk
-          POSTGRES_DB: frontdesk
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
 
     steps:
       - uses: actions/checkout@v4
@@ -40,10 +26,16 @@ jobs:
         working-directory: backend
 
       - name: Generate Prisma client
-        run: npm run prisma:generate
+        run: npx prisma generate --schema prisma/schema.prisma
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://frontdesk:frontdesk@localhost:5432/frontdesk
+          DATABASE_URL: "file:./dev.db"
+
+      - name: Push database schema
+        run: npx prisma db push --schema prisma/schema.prisma
+        working-directory: backend
+        env:
+          DATABASE_URL: "file:./dev.db"
 
       - name: Run type check
         run: npm run lint
@@ -53,7 +45,7 @@ jobs:
         run: npm test
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://frontdesk:frontdesk@localhost:5432/frontdesk
+          DATABASE_URL: "file:./dev.db"
 
       - name: Build application
         run: npm run build
