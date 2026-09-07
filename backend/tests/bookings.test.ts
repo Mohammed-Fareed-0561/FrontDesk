@@ -243,3 +243,288 @@ describe("Bookings — P0", () => {
     expect(conflicts).toBeLessThanOrEqual(1);
   });
 });
+
+describe("Bookings — lifecycle integrity", () => {
+  async function createPendingBooking(token: string, bizId: string, hoursAhead = 24) {
+    const { start, end } = futureISOWithDuration(hoursAhead, 60);
+    const cr = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${bizId}/bookings`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { startTime: start, endTime: end },
+    });
+    expect(cr.statusCode).toBe(201);
+    return JSON.parse(cr.body).data;
+  }
+
+  it("allows confirmed -> no_show and sets terminal state", async () => {
+    const { token } = await signup(`bkLife1${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const booking = await createPendingBooking(token, biz.id);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/no-show`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).data.status).toBe("no_show");
+  });
+
+  it("rejects invalid transitions pending->no_show and no_show->confirmed", async () => {
+    const { token } = await signup(`bkLife2${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const pending = await createPendingBooking(token, biz.id);
+    const badPending = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${pending.id}/no-show`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(badPending.statusCode).toBe(422);
+
+    const confirmedBooking = await createPendingBooking(token, biz.id, 25);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${confirmedBooking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${confirmedBooking.id}/no-show`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const badNoShow = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${confirmedBooking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(badNoShow.statusCode).toBe(422);
+  });
+
+  it("rejects transitions from terminal states completed and cancelled", async () => {
+    const { token } = await signup(`bkLife3${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const completedBooking = await createPendingBooking(token, biz.id);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${completedBooking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${completedBooking.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    for (const action of ["confirm", "cancel", "complete", "no-show"]) {
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/v1/businesses/${biz.id}/bookings/${completedBooking.id}/${action}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(422);
+    }
+
+    const cancelledBooking = await createPendingBooking(token, biz.id, 26);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${cancelledBooking.id}/cancel`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    for (const action of ["confirm", "cancel", "complete", "no-show"]) {
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/v1/businesses/${biz.id}/bookings/${cancelledBooking.id}/${action}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(422);
+    }
+  });
+
+  it("rejects repeated transitions on the same terminal state", async () => {
+    const { token } = await signup(`bkLife4${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const booking = await createPendingBooking(token, biz.id);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/cancel`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const repeat = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/cancel`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(repeat.statusCode).toBe(422);
+  });
+
+  it("rejects PATCH updates on terminal states including no_show", async () => {
+    const { token } = await signup(`bkLife5${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+
+    const completedBooking = await createPendingBooking(token, biz.id);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${completedBooking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${completedBooking.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const completedPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/businesses/${biz.id}/bookings/${completedBooking.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { customerNotes: "should fail" },
+    });
+    expect(completedPatch.statusCode).toBe(422);
+
+    const cancelledBooking = await createPendingBooking(token, biz.id, 27);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${cancelledBooking.id}/cancel`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const cancelledPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/businesses/${biz.id}/bookings/${cancelledBooking.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { customerNotes: "should fail" },
+    });
+    expect(cancelledPatch.statusCode).toBe(422);
+
+    const noShowBooking = await createPendingBooking(token, biz.id, 28);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${noShowBooking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${noShowBooking.id}/no-show`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const noShowPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/businesses/${biz.id}/bookings/${noShowBooking.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { customerNotes: "should fail" },
+    });
+    expect(noShowPatch.statusCode).toBe(422);
+  });
+
+  it("writes audit, domain event, and timestamps on lifecycle transitions", async () => {
+    const { token } = await signup(`bkLife6${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const booking = await createPendingBooking(token, biz.id);
+
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const cancelRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/cancel`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const cancelled = JSON.parse(cancelRes.body).data;
+    expect(cancelled.cancelledAt).toBeTruthy();
+    expect(cancelled.completedAt).toBeNull();
+
+    const cancelAudit = await prisma.auditLog.findMany({
+      where: { businessId: biz.id, entityId: booking.id, action: "BOOKING_CANCELLED" },
+    });
+    expect(cancelAudit.length).toBe(1);
+    const cancelEvent = await prisma.domainEvent.findMany({
+      where: { businessId: biz.id, aggregateId: booking.id, eventType: "BOOKING_CANCELLED" },
+    });
+    expect(cancelEvent.length).toBe(1);
+
+    const completeBooking = await createPendingBooking(token, biz.id, 29);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${completeBooking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const completeRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${completeBooking.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const completed = JSON.parse(completeRes.body).data;
+    expect(completed.completedAt).toBeTruthy();
+
+    const noShowBooking = await createPendingBooking(token, biz.id, 30);
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${noShowBooking.id}/confirm`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${noShowBooking.id}/no-show`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const noShowAudit = await prisma.auditLog.findMany({
+      where: { businessId: biz.id, entityId: noShowBooking.id, action: "BOOKING_NO_SHOW" },
+    });
+    expect(noShowAudit.length).toBe(1);
+    const noShowEvent = await prisma.domainEvent.findMany({
+      where: { businessId: biz.id, aggregateId: noShowBooking.id, eventType: "BOOKING_NO_SHOW" },
+    });
+    expect(noShowEvent.length).toBe(1);
+  });
+
+  it("enforces tenant isolation on lifecycle transitions", async () => {
+    const owner = await signup(`bkLife7A${Date.now()}@test.com`);
+    const outsider = await signup(`bkLife7B${Date.now()}@test.com`);
+    const biz = await createBusiness(owner.token);
+    const booking = await createPendingBooking(owner.token, biz.id);
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/confirm`,
+      headers: { authorization: `Bearer ${outsider.token}` },
+    });
+    expect([403, 404].includes(res.statusCode)).toBe(true);
+  });
+
+  it("allows only one concurrent transition from the same source state", async () => {
+    const { token } = await signup(`bkLife8${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const booking = await createPendingBooking(token, biz.id, 31);
+    const headers = { authorization: `Bearer ${token}` };
+
+    const [confirm, cancel] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/confirm`,
+        headers,
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/cancel`,
+        headers,
+      }),
+    ]);
+
+    expect([confirm.statusCode, cancel.statusCode].sort()).toEqual([200, 422]);
+    const finalBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
+    expect(["confirmed", "cancelled"]).toContain(finalBooking?.status);
+
+    const lifecycleAudits = await prisma.auditLog.findMany({
+      where: { businessId: biz.id, entityId: booking.id },
+    });
+    expect(lifecycleAudits.filter((log) => ["BOOKING_CONFIRMED", "BOOKING_CANCELLED"].includes(log.action))).toHaveLength(1);
+
+    const lifecycleEvents = await prisma.domainEvent.findMany({
+      where: { businessId: biz.id, aggregateId: booking.id },
+    });
+    expect(lifecycleEvents.filter((event) => ["BOOKING_CONFIRMED", "BOOKING_CANCELLED"].includes(event.eventType))).toHaveLength(1);
+  });
+});

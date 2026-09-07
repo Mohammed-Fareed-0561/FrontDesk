@@ -23,6 +23,11 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   no_show: [],
 };
 
+function isTerminalBookingStatus(status: string): boolean {
+  const allowed = ALLOWED_TRANSITIONS[status];
+  return allowed !== undefined && allowed.length === 0;
+}
+
 function generateBookingNumber() {
   const ts = Date.now().toString(36).toUpperCase();
   const rnd = Math.random().toString(36).slice(2, 4).toUpperCase();
@@ -186,7 +191,9 @@ export async function bookingsRoutes(app: FastifyInstance) {
     await assertBusinessAccess(userId, businessId);
     const booking = await prisma.booking.findFirst({ where: { id: bookingId, businessId } });
     if (!booking) throw Errors.notFound("Booking");
-    if (booking.status === "completed" || booking.status === "cancelled") throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: `Cannot update ${booking.status} booking` });
+    if (isTerminalBookingStatus(booking.status)) {
+      throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: `Cannot update ${booking.status} booking` });
+    }
 
     const schema = z.object({
       customerId: z.string().optional().nullable(),
@@ -249,7 +256,17 @@ export async function bookingsRoutes(app: FastifyInstance) {
     if (target === "cancelled") data.cancelledAt = new Date();
     if (target === "completed") data.completedAt = new Date();
     const before = { ...booking };
-    const updated = await prisma.booking.update({ where: { id: bookingId }, data, include: { customer: true, service: true } });
+    const result = await prisma.booking.updateMany({
+      where: { id: bookingId, businessId, status: booking.status },
+      data,
+    });
+    if (result.count !== 1) {
+      throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: `Cannot transition ${booking.status} -> ${target}` });
+    }
+    const updated = await prisma.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      include: { customer: true, service: true },
+    });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: `BOOKING_${target.toUpperCase()}`, entityType: "booking", entityId: bookingId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) } });
     await emitAndDispatch({ businessId, eventType: `BOOKING_${target.toUpperCase()}`, aggregateType: "booking", aggregateId: bookingId, payload: JSON.stringify({ bookingId, target }) });
     return updated;
