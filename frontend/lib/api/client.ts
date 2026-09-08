@@ -54,10 +54,8 @@ export async function apiClient<T = any>(path: string, options: ApiOptions = {})
   const url = buildUrl(path, params);
   const token = skipAuth ? null : getAuthToken();
 
-  const fetchHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...headers,
-  };
+  const fetchHeaders: Record<string, string> = { ...headers };
+  if (body !== undefined) fetchHeaders["Content-Type"] = "application/json";
 
   if (token) {
     fetchHeaders["Authorization"] = `Bearer ${token}`;
@@ -92,10 +90,8 @@ export async function apiClientRaw(path: string, options: ApiOptions = {}): Prom
   const url = buildUrl(path, params);
   const token = skipAuth ? null : getAuthToken();
 
-  const fetchHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...headers,
-  };
+  const fetchHeaders: Record<string, string> = { ...headers };
+  if (body !== undefined) fetchHeaders["Content-Type"] = "application/json";
 
   if (token) {
     fetchHeaders["Authorization"] = `Bearer ${token}`;

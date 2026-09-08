@@ -87,4 +87,48 @@ test.describe("Bookings — browser workflow", () => {
     await search.fill("");
     await page.waitForTimeout(500);
   });
+
+});
+
+test.describe("Bookings — action reliability", () => {
+  test("confirms a booking through the lifecycle API contract", async ({ page, request }) => {
+    const email = `booking-ui-${Date.now()}@test.com`;
+    const signup = await request.post("http://localhost:4000/api/v1/auth/signup", {
+      data: { email, password: "password123", displayName: "Booking UI Test" },
+    });
+    expect(signup.ok()).toBeTruthy();
+    const session = (await signup.json()).data;
+    const businessResponse = await request.post("http://localhost:4000/api/v1/businesses", {
+      headers: { Authorization: `Bearer ${session.token}` },
+      data: { name: `Booking UI Business ${Date.now()}` },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
+
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    await page.goto("/dashboard/bookings");
+    await expect(page.getByRole("heading", { name: "Bookings" })).toBeVisible({ timeout: 10000 });
+    await page.getByTestId("new-booking-btn").click();
+
+    const dialog = page.getByRole("dialog").filter({ hasText: "New booking" });
+    await expect(dialog).toBeVisible();
+    const uniqueStart = new Date(Date.now() + 48 * 3600000);
+    await page.getByTestId("booking-date").fill(uniqueStart.toISOString().split("T")[0]);
+    await page.getByTestId("booking-time").fill(uniqueStart.toISOString().split("T")[1].slice(0, 5));
+    await page.getByTestId("booking-duration").fill("60");
+    await page.getByTestId("create-booking-btn").click();
+    await expect(page.getByText(/Booking created/i).first()).toBeVisible({ timeout: 10000 });
+    await expect(dialog).toBeHidden({ timeout: 5000 });
+
+    await page.getByTestId("view-booking-btn").first().click();
+    const detail = page.getByTestId("booking-detail-dialog");
+    await expect(detail).toBeVisible({ timeout: 10000 });
+
+    page.once("dialog", (browserDialog) => browserDialog.accept());
+    const confirmButton = page.getByTestId("confirm-booking-btn");
+    const confirmResponse = page.waitForResponse("**/api/v1/businesses/*/bookings/*/confirm");
+    await confirmButton.click();
+    const response = await confirmResponse;
+    expect(response.status()).toBe(200);
+    await expect(detail.getByText("confirmed").first()).toBeVisible({ timeout: 10000 });
+  });
 });
