@@ -62,6 +62,17 @@ const EVENT_HANDLERS: Record<
     };
   },
 
+  BOOKING_CONFIRMED: async (businessId, payload) => {
+    return {
+      type: "BOOKING",
+      title: "Booking Confirmed",
+      message: `Booking ${payload.bookingNumber || payload.bookingId || ""} has been confirmed.`,
+      severity: "info",
+      sourceType: "booking",
+      sourceId: payload.bookingId || payload.aggregateId || "",
+    };
+  },
+
   PAYMENT_PAID: async (businessId, payload) => {
     return {
       type: "PAYMENT",

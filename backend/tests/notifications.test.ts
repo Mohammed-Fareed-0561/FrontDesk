@@ -354,6 +354,31 @@ describe("Notifications — P0", () => {
     expect(total).toBe(2);
   });
 
+  it("creates an idempotent, business-scoped notification for booking confirmation", async () => {
+    const { handleNotificationEvent } = await import("../src/modules/notifications/handler.js");
+    const a = await signup(`notifBookingConfirmA${Date.now()}@test.com`);
+    const b = await signup(`notifBookingConfirmB${Date.now()}@test.com`);
+    const bizA = await createBusiness(a.token);
+    const bizB = await createBusiness(b.token);
+    const payload = { bookingId: "confirmed-booking-1", bookingNumber: "BK-CONF-1" };
+
+    await handleNotificationEvent(bizA.id, "BOOKING_CONFIRMED", payload, payload.bookingId);
+    await handleNotificationEvent(bizA.id, "BOOKING_CONFIRMED", payload, payload.bookingId);
+    await handleNotificationEvent(bizB.id, "BOOKING_CONFIRMED", payload, payload.bookingId);
+
+    const notificationsA = await prisma.notification.findMany({
+      where: { businessId: bizA.id, sourceType: "booking", sourceId: payload.bookingId },
+    });
+    const notificationsB = await prisma.notification.findMany({
+      where: { businessId: bizB.id, sourceType: "booking", sourceId: payload.bookingId },
+    });
+    expect(notificationsA).toHaveLength(1);
+    expect(notificationsB).toHaveLength(1);
+    expect(notificationsA[0].recipientId).toBeNull();
+    expect(notificationsA[0].title).toBe("Booking Confirmed");
+    expect(notificationsA[0].message).toContain(payload.bookingNumber);
+  });
+
   it("business-scoped idempotency: same sourceId in different businesses creates separate notifications", async () => {
     const { handleNotificationEvent } = await import("../src/modules/notifications/handler.js");
     const a = await signup(`notifBizScopeA${Date.now()}@test.com`);
