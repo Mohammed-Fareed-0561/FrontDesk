@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { apiClient } from "@/lib/api/client";
 import { useBusiness } from "@/hooks/useBusiness";
-import type { Website, WebsiteComponent, WebsiteSection } from "@/types";
+import type { Website, WebsiteComponent, WebsitePage as WebsitePageRecord, WebsiteSection } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
-import { ArrowDown, ArrowUp, Check, Globe, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Globe, Pencil, Plus, Save, Trash2 } from "lucide-react";
 
 function parseObject(value: string | null | undefined): Record<string, any> {
   if (!value) return {};
@@ -78,6 +78,10 @@ function toPatch(website: Website) {
   };
 }
 
+function slugify(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
 export default function WebsitePage() {
   const { selectedId } = useBusiness();
   const { toast } = useToast();
@@ -89,6 +93,14 @@ export default function WebsitePage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [pageSaving, setPageSaving] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [showNewPage, setShowNewPage] = useState(false);
+  const [newPageTitle, setNewPageTitle] = useState("");
+  const [newPageSlug, setNewPageSlug] = useState("");
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [editPageTitle, setEditPageTitle] = useState("");
+  const [editPageSlug, setEditPageSlug] = useState("");
 
   const loadWebsite = useCallback(async () => {
     if (!selectedId) return;
@@ -157,6 +169,77 @@ export default function WebsitePage() {
     }
   };
 
+  const createPage = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selectedId || !website) return;
+    setPageSaving(true);
+    setPageError(null);
+    try {
+      const created = await apiClient<WebsitePageRecord>(`/businesses/${selectedId}/website/pages`, {
+        method: "POST",
+        body: { title: newPageTitle, slug: newPageSlug || slugify(newPageTitle) },
+      });
+      setWebsite({ ...website, pages: [...(website.pages || []), created] });
+      setPageId(created.id);
+      setComponentId(null);
+      setNewPageTitle("");
+      setNewPageSlug("");
+      setShowNewPage(false);
+      toast({ title: "Page created" });
+    } catch (error: any) {
+      setPageError(error.message || "Could not create page");
+    } finally {
+      setPageSaving(false);
+    }
+  };
+
+  const beginPageEdit = (page: WebsitePageRecord) => {
+    setEditingPageId(page.id);
+    setEditPageTitle(page.title);
+    setEditPageSlug(page.slug);
+    setPageError(null);
+  };
+
+  const updatePage = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selectedId || !website || !editingPageId) return;
+    setPageSaving(true);
+    setPageError(null);
+    try {
+      const updated = await apiClient<WebsitePageRecord>(`/businesses/${selectedId}/website/pages/${editingPageId}`, {
+        method: "PATCH",
+        body: { title: editPageTitle, slug: editPageSlug },
+      });
+      setWebsite({ ...website, pages: website.pages?.map((page) => page.id === updated.id ? updated : page) });
+      setEditingPageId(null);
+      toast({ title: "Page updated" });
+    } catch (error: any) {
+      setPageError(error.message || "Could not update page");
+    } finally {
+      setPageSaving(false);
+    }
+  };
+
+  const deletePage = async (page: WebsitePageRecord) => {
+    if (!selectedId || !website) return;
+    setPageSaving(true);
+    setPageError(null);
+    try {
+      await apiClient(`/businesses/${selectedId}/website/pages/${page.id}`, { method: "DELETE" });
+      const remaining = (website.pages || []).filter((item) => item.id !== page.id);
+      setWebsite({ ...website, pages: remaining });
+      if (page.id === pageId) {
+        setPageId(remaining[0]?.id || null);
+        setComponentId(null);
+      }
+      toast({ title: "Page deleted" });
+    } catch (error: any) {
+      setPageError(error.message || "Could not delete page");
+    } finally {
+      setPageSaving(false);
+    }
+  };
+
   const deleteComponent = async () => {
     if (!selectedId || !selectedComponent) return;
     setDeleting(true);
@@ -200,7 +283,13 @@ export default function WebsitePage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_320px]">
-        <Card className="h-fit"><CardHeader><CardTitle className="text-base">Pages</CardTitle><CardDescription>Select a page to edit.</CardDescription></CardHeader><CardContent className="space-y-2">{ordered(website.pages).map((page) => <Button key={page.id} variant={page.id === pageId ? "secondary" : "ghost"} className="w-full justify-start" onClick={() => { setPageId(page.id); setComponentId(null); }}>{page.title}<span className="ml-auto text-xs text-muted-foreground">/{page.slug}</span></Button>)}{!website.pages?.length && <p className="text-sm text-muted-foreground">No pages yet.</p>}</CardContent></Card>
+        <Card className="h-fit"><CardHeader><div className="flex items-center justify-between gap-2"><div><CardTitle className="text-base">Pages</CardTitle><CardDescription>Select a page to edit.</CardDescription></div><Button size="icon" variant="outline" aria-label="Create page" onClick={() => { setShowNewPage((current) => !current); setPageError(null); }}><Plus className="h-4 w-4" /></Button></div></CardHeader><CardContent className="space-y-3">
+          {pageError && <p role="alert" className="text-sm text-destructive">{pageError}</p>}
+          {showNewPage && <form className="space-y-2 rounded-md border p-3" onSubmit={createPage}><Label htmlFor="new-page-title">Page title</Label><Input id="new-page-title" value={newPageTitle} onChange={(event) => { setNewPageTitle(event.target.value); if (!newPageSlug) setNewPageSlug(slugify(event.target.value)); }} required /><Label htmlFor="new-page-slug">Page slug</Label><Input id="new-page-slug" value={newPageSlug} onChange={(event) => setNewPageSlug(event.target.value)} required /><Button type="submit" aria-label="Submit create page" className="w-full" disabled={pageSaving}>{pageSaving ? "Creating…" : "Create page"}</Button></form>}
+          {ordered(website.pages).map((page) => editingPageId === page.id ? <form key={page.id} className="space-y-2 rounded-md border p-3" onSubmit={updatePage}><Label htmlFor={`edit-page-title-${page.id}`}>Page title</Label><Input id={`edit-page-title-${page.id}`} value={editPageTitle} onChange={(event) => setEditPageTitle(event.target.value)} required /><Label htmlFor={`edit-page-slug-${page.id}`}>Page slug</Label><Input id={`edit-page-slug-${page.id}`} value={editPageSlug} onChange={(event) => setEditPageSlug(event.target.value)} required /><div className="flex gap-2"><Button type="submit" disabled={pageSaving}>{pageSaving ? "Saving…" : "Save page"}</Button><Button type="button" variant="ghost" onClick={() => setEditingPageId(null)}>Cancel</Button></div></form> : <div key={page.id} className="flex items-center gap-1"><Button aria-label={`Select ${page.title} page`} variant={page.id === pageId ? "secondary" : "ghost"} className="min-w-0 flex-1 justify-start" onClick={() => { setPageId(page.id); setComponentId(null); }}>{page.title}<span className="ml-auto text-xs text-muted-foreground">/{page.slug}</span></Button><Button size="icon" variant="ghost" aria-label={`Edit ${page.title} page`} onClick={() => beginPageEdit(page)}><Pencil className="h-4 w-4" /></Button><Button size="icon" variant="ghost" aria-label={`Delete ${page.title} page`} disabled={pageSaving || (website.pages?.length || 0) <= 1} onClick={() => deletePage(page)}><Trash2 className="h-4 w-4" /></Button></div>)}
+          {!website.pages?.length && <p className="text-sm text-muted-foreground">No pages yet.</p>}
+          {(website.pages?.length || 0) <= 1 && <p className="text-xs text-muted-foreground">The last page cannot be deleted.</p>}
+        </CardContent></Card>
 
         <Card><CardHeader><CardTitle>{currentPage?.title || "Page canvas"}</CardTitle><CardDescription>{currentPage ? `/${currentPage.slug} · Select a component to inspect it.` : "Select a page to begin."}</CardDescription></CardHeader><CardContent className="space-y-4">{!currentPage && <p className="py-12 text-center text-sm text-muted-foreground">This website has no editable pages.</p>}{ordered(currentPage?.sections).map((section) => <SectionCanvas key={section.id} section={section} selectedId={componentId} onSelect={setComponentId} onMove={moveComponent} />)}{currentPage && !currentPage.sections?.length && <p className="py-12 text-center text-sm text-muted-foreground">This page has no sections.</p>}</CardContent></Card>
 

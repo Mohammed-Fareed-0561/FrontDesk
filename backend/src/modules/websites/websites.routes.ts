@@ -28,6 +28,40 @@ const websiteTreeInclude: any = {
 
 const jsonObject = z.record(z.unknown());
 
+const pageCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must contain lowercase letters, numbers, and hyphens only"),
+  pageType: z.string().trim().max(50).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  seoConfig: jsonObject.optional(),
+});
+
+const pagePatchSchema = pageCreateSchema.partial();
+
+const pageInclude: any = {
+  sections: {
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    include: { components: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
+  },
+};
+
+async function getOwnedWebsite(userId: string, businessId: string) {
+  await assertBusinessAccess(userId, businessId);
+  const website = await prisma.website.findFirst({ where: { businessId } });
+  if (!website) throw Errors.notFound("Website");
+  return website;
+}
+
+function pageData(data: z.infer<typeof pageCreateSchema>) {
+  return {
+    title: data.title,
+    slug: data.slug,
+    pageType: data.pageType,
+    sortOrder: data.sortOrder,
+    seoConfig: data.seoConfig === undefined ? undefined : JSON.stringify(data.seoConfig),
+  };
+}
+
 const websitePatchSchema = z.object({
   name: z.string().optional(),
   themeConfig: z.any().optional(),
@@ -99,6 +133,68 @@ export async function websitesRoutes(app: FastifyInstance) {
       website = await (prisma.website.create as any)({ data: { businessId, name: "Website", status: "draft" }, include: { ...websiteTreeInclude, versions: true } });
     }
     return reply.send({ success: true, data: website });
+  });
+
+  app.get("/api/v1/businesses/:businessId/website/pages", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
+    const { businessId } = req.params as any;
+    const website = await getOwnedWebsite(userId, businessId);
+    const pages = await prisma.websitePage.findMany({ where: { websiteId: website.id }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: pageInclude });
+    return reply.send({ success: true, data: pages });
+  });
+
+  app.post("/api/v1/businesses/:businessId/website/pages", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
+    const { businessId } = req.params as any;
+    const website = await getOwnedWebsite(userId, businessId);
+    const parsed = pageCreateSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid page data", details: parsed.error.flatten() });
+    const duplicate = await prisma.websitePage.findFirst({ where: { websiteId: website.id, slug: parsed.data.slug } });
+    if (duplicate) throw Errors.conflict("A page with this slug already exists");
+    const lastPage = await prisma.websitePage.findFirst({ where: { websiteId: website.id }, orderBy: [{ sortOrder: "desc" }, { id: "desc" }] });
+    try {
+      const page = await prisma.websitePage.create({ data: { websiteId: website.id, ...pageData({ ...parsed.data, sortOrder: parsed.data.sortOrder ?? (lastPage ? lastPage.sortOrder + 1 : 0) }), }, include: pageInclude });
+      await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_PAGE_CREATED", entityType: "website_page", entityId: page.id } });
+      return reply.code(201).send({ success: true, data: page });
+    } catch (error: any) {
+      if (error?.code === "P2002") throw Errors.conflict("A page with this slug already exists");
+      throw error;
+    }
+  });
+
+  app.patch("/api/v1/businesses/:businessId/website/pages/:pageId", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
+    const { businessId, pageId } = req.params as any;
+    const website = await getOwnedWebsite(userId, businessId);
+    const parsed = pagePatchSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid page data", details: parsed.error.flatten() });
+    const existing = await prisma.websitePage.findFirst({ where: { id: pageId, websiteId: website.id } });
+    if (!existing) throw Errors.notFound("WebsitePage");
+    if (parsed.data.slug && parsed.data.slug !== existing.slug) {
+      const duplicate = await prisma.websitePage.findFirst({ where: { websiteId: website.id, slug: parsed.data.slug, id: { not: pageId } } });
+      if (duplicate) throw Errors.conflict("A page with this slug already exists");
+    }
+    try {
+      const page = await prisma.websitePage.update({ where: { id: pageId }, data: pageData({ title: parsed.data.title ?? existing.title, slug: parsed.data.slug ?? existing.slug, pageType: parsed.data.pageType, sortOrder: parsed.data.sortOrder, seoConfig: parsed.data.seoConfig }), include: pageInclude });
+      await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_PAGE_UPDATED", entityType: "website_page", entityId: page.id } });
+      return reply.send({ success: true, data: page });
+    } catch (error: any) {
+      if (error?.code === "P2002") throw Errors.conflict("A page with this slug already exists");
+      throw error;
+    }
+  });
+
+  app.delete("/api/v1/businesses/:businessId/website/pages/:pageId", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
+    const { businessId, pageId } = req.params as any;
+    const website = await getOwnedWebsite(userId, businessId);
+    const page = await prisma.websitePage.findFirst({ where: { id: pageId, websiteId: website.id } });
+    if (!page) throw Errors.notFound("WebsitePage");
+    const pageCount = await prisma.websitePage.count({ where: { websiteId: website.id } });
+    if (pageCount <= 1) throw Errors.validation("A website must keep at least one page");
+    await prisma.websitePage.delete({ where: { id: page.id } });
+    await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_PAGE_DELETED", entityType: "website_page", entityId: page.id } });
+    return reply.send({ success: true, data: { id: page.id } });
   });
 
   app.patch("/api/v1/businesses/:businessId/website", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
