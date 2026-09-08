@@ -242,6 +242,65 @@ describe("Bookings — P0", () => {
     expect(successes).toBeGreaterThanOrEqual(1);
     expect(conflicts).toBeLessThanOrEqual(1);
   });
+
+  it("creates exactly one booking when identical requests race", async () => {
+    const { token } = await signup(`bk16${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const start = new Date(Date.now() + 72 * 3600000);
+    const end = new Date(start.getTime() + 60 * 60000);
+    const payload = { startTime: start.toISOString(), endTime: end.toISOString() };
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/bookings`, headers: { authorization: `Bearer ${token}` }, payload })
+      )
+    );
+    expect(results.filter((r: any) => r.statusCode === 201).length).toBe(1);
+    expect(results.filter((r: any) => r.statusCode === 409).length).toBe(4);
+    const rows = await prisma.booking.findMany({ where: { businessId: biz.id } });
+    expect(rows.length).toBe(1);
+  });
+
+  it("keeps concurrent slot claims isolated per business", async () => {
+    const a = await signup(`bk17A${Date.now()}@test.com`);
+    const b = await signup(`bk17B${Date.now()}@test.com`);
+    const bizA = await createBusiness(a.token);
+    const bizB = await createBusiness(b.token);
+    const start = new Date(Date.now() + 96 * 3600000);
+    const end = new Date(start.getTime() + 60 * 60000);
+    const payload = { startTime: start.toISOString(), endTime: end.toISOString() };
+    const [ra, rb] = await Promise.all([
+      app.inject({ method: "POST", url: `/api/v1/businesses/${bizA.id}/bookings`, headers: { authorization: `Bearer ${a.token}` }, payload }),
+      app.inject({ method: "POST", url: `/api/v1/businesses/${bizB.id}/bookings`, headers: { authorization: `Bearer ${b.token}` }, payload }),
+    ]);
+    expect(ra.statusCode).toBe(201);
+    expect(rb.statusCode).toBe(201);
+    expect((await prisma.booking.findMany({ where: { businessId: bizA.id } })).length).toBe(1);
+    expect((await prisma.booking.findMany({ where: { businessId: bizB.id } })).length).toBe(1);
+  });
+
+  it("does not allow concurrent reschedules into the same slot", async () => {
+    const { token } = await signup(`bk18${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const base = new Date(Date.now() + 120 * 3600000);
+    const created = await Promise.all([0, 2, 4].map((offsetHours) => {
+      const s = new Date(base.getTime() + offsetHours * 3600000);
+      const e = new Date(s.getTime() + 60 * 60000);
+      return app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/bookings`, headers: { authorization: `Bearer ${token}` }, payload: { startTime: s.toISOString(), endTime: e.toISOString() } });
+    }));
+    const ids = created.map((r: any) => JSON.parse(r.body).data.id);
+    const target = new Date(base.getTime() + 10 * 3600000);
+    const targetEnd = new Date(target.getTime() + 60 * 60000);
+    const patch = { startTime: target.toISOString(), endTime: targetEnd.toISOString() };
+    const results = await Promise.all(
+      ids.map((id: string) =>
+        app.inject({ method: "PATCH", url: `/api/v1/businesses/${biz.id}/bookings/${id}`, headers: { authorization: `Bearer ${token}` }, payload: patch })
+      )
+    );
+    expect(results.filter((r: any) => r.statusCode === 200).length).toBe(1);
+    expect(results.filter((r: any) => r.statusCode === 409).length).toBe(2);
+    const inTargetSlot = await prisma.booking.findMany({ where: { businessId: biz.id, startTime: target } });
+    expect(inTargetSlot.length).toBe(1);
+  });
 });
 
 describe("Bookings — lifecycle integrity", () => {

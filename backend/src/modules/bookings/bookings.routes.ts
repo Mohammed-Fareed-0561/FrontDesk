@@ -41,8 +41,10 @@ function parseDateTime(dateStr: string, timeStr?: string): Date {
   return new Date(dateStr);
 }
 
-async function checkConflict(businessId: string, start: Date, end: Date, excludeId?: string) {
-  const overlapping = await prisma.booking.findFirst({
+type PrismaClientLike = Pick<typeof prisma, "booking">;
+
+async function checkConflict(client: PrismaClientLike, businessId: string, start: Date, end: Date, excludeId?: string) {
+  const overlapping = await client.booking.findFirst({
     where: {
       businessId,
       id: excludeId ? { not: excludeId } : undefined,
@@ -53,6 +55,53 @@ async function checkConflict(businessId: string, start: Date, end: Date, exclude
     } as any,
   });
   return overlapping;
+}
+
+function isPostgres() {
+  const url = process.env.DATABASE_URL || "";
+  return url.startsWith("postgres://") || url.startsWith("postgresql://");
+}
+
+function isSerializationFailure(e: any) {
+  const code = e?.code;
+  return code === "P2034" || code === "40001" || e?.meta?.code === "40001";
+}
+
+const businessWriteQueues = new Map<string, Promise<unknown>>();
+
+function serializePerBusiness<T>(businessId: string, fn: () => Promise<T>): Promise<T> {
+  const previous = businessWriteQueues.get(businessId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(fn);
+  businessWriteQueues.set(businessId, next.catch(() => undefined));
+  return next.finally(() => {
+    if (businessWriteQueues.get(businessId) === next) businessWriteQueues.delete(businessId);
+  });
+}
+
+// The overlap check and the write must observe the same state, otherwise two
+// concurrent requests both see a free slot and both insert. Requests touching
+// one business are queued in-process; on PostgreSQL the check and write also run
+// in one Serializable transaction so that another instance cannot interleave.
+// SQLite (development/test) runs single-process, where the queue is sufficient
+// and an interactive transaction would only add lock contention.
+async function withBookingSlotGuard<T>(businessId: string, fn: (client: PrismaClientLike) => Promise<T>): Promise<T> {
+  if (!isPostgres()) return serializePerBusiness(businessId, () => fn(prisma));
+
+  const run = () =>
+    serializePerBusiness(businessId, () =>
+      prisma.$transaction((tx) => fn(tx), { isolationLevel: "Serializable" })
+    );
+  try {
+    return await run();
+  } catch (e: any) {
+    if (!isSerializationFailure(e)) throw e;
+    try {
+      return await run();
+    } catch (retryError: any) {
+      if (!isSerializationFailure(retryError)) throw retryError;
+      throw new AppError({ statusCode: 409, code: "CONFLICT", message: "Time slot conflicts with another booking" });
+    }
+  }
 }
 
 export async function bookingsRoutes(app: FastifyInstance) {
@@ -113,38 +162,40 @@ export async function bookingsRoutes(app: FastifyInstance) {
       throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid date/time" });
     }
 
-    const conflict = await checkConflict(businessId, start, end);
-    if (conflict) throw new AppError({ statusCode: 409, code: "CONFLICT", message: `Time slot conflicts with booking ${conflict.bookingNumber}` });
+    const booking = await withBookingSlotGuard(businessId, async (tx) => {
+      const conflict = await checkConflict(tx, businessId, start, end);
+      if (conflict) throw new AppError({ statusCode: 409, code: "CONFLICT", message: `Time slot conflicts with booking ${conflict.bookingNumber}` });
 
-    let bookingNumber: string;
-    let attempts = 0;
-    do {
-      bookingNumber = generateBookingNumber();
-      attempts++;
-      if (attempts > 5) throw new AppError({ statusCode: 500, code: "INTERNAL_ERROR", message: "Failed to generate booking number" });
-    } while (await prisma.booking.findUnique({ where: { businessId_bookingNumber: { businessId, bookingNumber } } } as any));
+      let bookingNumber: string;
+      let attempts = 0;
+      do {
+        bookingNumber = generateBookingNumber();
+        attempts++;
+        if (attempts > 5) throw new AppError({ statusCode: 500, code: "INTERNAL_ERROR", message: "Failed to generate booking number" });
+      } while (await tx.booking.findUnique({ where: { businessId_bookingNumber: { businessId, bookingNumber } } } as any));
 
-    const booking = await prisma.booking.create({
-      data: {
-        businessId,
-        customerId: customerId || null,
-        serviceId: serviceId || null,
-        staffId: staffId || null,
-        locationId: locationId || null,
-        bookingNumber,
-        startTime: start,
-        endTime: end,
-        status: "pending",
-        source: source || "MANUAL",
-        customerNotes: customerNotes || null,
-        internalNotes: internalNotes || null,
-        createdBy: userId,
-      },
-      include: { customer: true, service: true },
+      return tx.booking.create({
+        data: {
+          businessId,
+          customerId: customerId || null,
+          serviceId: serviceId || null,
+          staffId: staffId || null,
+          locationId: locationId || null,
+          bookingNumber,
+          startTime: start,
+          endTime: end,
+          status: "pending",
+          source: source || "MANUAL",
+          customerNotes: customerNotes || null,
+          internalNotes: internalNotes || null,
+          createdBy: userId,
+        },
+        include: { customer: true, service: true },
+      });
     });
 
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "BOOKING_CREATED", entityType: "booking", entityId: booking.id, afterData: JSON.stringify(booking) } });
-    await emitAndDispatch({ businessId, eventType: "BOOKING_CREATED", aggregateType: "booking", aggregateId: booking.id, payload: JSON.stringify({ bookingId: booking.id, bookingNumber }) });
+    await emitAndDispatch({ businessId, eventType: "BOOKING_CREATED", aggregateType: "booking", aggregateId: booking.id, payload: JSON.stringify({ bookingId: booking.id, bookingNumber: booking.bookingNumber }) });
 
     return reply.code(201).send({ success: true, data: booking });
   });
@@ -234,15 +285,18 @@ export async function bookingsRoutes(app: FastifyInstance) {
       data.endTime = newEnd;
     }
     if (newEnd <= newStart) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "endTime must be after startTime" });
-    if (parsed.data.startTime || parsed.data.endTime) {
-      const conflict = await checkConflict(businessId, newStart, newEnd, bookingId);
-      if (conflict) throw new AppError({ statusCode: 409, code: "CONFLICT", message: `Time slot conflicts with booking ${conflict.bookingNumber}` });
-    }
     if (parsed.data.customerNotes !== undefined) data.customerNotes = parsed.data.customerNotes;
     if (parsed.data.internalNotes !== undefined) data.internalNotes = parsed.data.internalNotes;
 
     const before = { ...booking };
-    const updated = await prisma.booking.update({ where: { id: bookingId }, data, include: { customer: true, service: true } });
+    const reschedules = Boolean(parsed.data.startTime || parsed.data.endTime);
+    const updated = await withBookingSlotGuard(businessId, async (tx) => {
+      if (reschedules) {
+        const conflict = await checkConflict(tx, businessId, newStart, newEnd, bookingId);
+        if (conflict) throw new AppError({ statusCode: 409, code: "CONFLICT", message: `Time slot conflicts with booking ${conflict.bookingNumber}` });
+      }
+      return tx.booking.update({ where: { id: bookingId }, data, include: { customer: true, service: true } });
+    });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "BOOKING_UPDATED", entityType: "booking", entityId: bookingId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) } });
     return reply.send({ success: true, data: updated });
   });

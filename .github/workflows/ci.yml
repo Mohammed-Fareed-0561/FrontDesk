@@ -99,6 +99,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # GHCR requires lowercase repository names; github.repository preserves
+      # the owner/repo casing as written on GitHub.
+      - name: Compute lowercase image repository
+        run: echo "IMAGE_REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -113,7 +118,7 @@ jobs:
         id: meta-backend
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}-backend
+          images: ghcr.io/${{ env.IMAGE_REPO }}-backend
           tags: |
             type=ref,event=branch
             type=sha,prefix={{branch}}-
@@ -128,14 +133,14 @@ jobs:
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-backend:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-backend:buildcache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ env.IMAGE_REPO }}-backend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.IMAGE_REPO }}-backend:buildcache,mode=max
 
       - name: Extract metadata (frontend)
         id: meta-frontend
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}-frontend
+          images: ghcr.io/${{ env.IMAGE_REPO }}-frontend
           tags: |
             type=ref,event=branch
             type=sha,prefix={{branch}}-
@@ -150,5 +155,5 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-frontend:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-frontend:buildcache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ env.IMAGE_REPO }}-frontend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.IMAGE_REPO }}-frontend:buildcache,mode=max
