@@ -121,6 +121,59 @@ describe("Bookings — P0", () => {
     expect(res.statusCode).toBe(422);
   });
 
+  it("rejects cross-tenant customer on PATCH reassignment", async () => {
+    const a = await signup(`bk6PA${Date.now()}@test.com`);
+    const b = await signup(`bk6PB${Date.now()}@test.com`);
+    const bizA = await createBusiness(a.token);
+    const bizB = await createBusiness(b.token);
+    const custB = await createCustomer(bizB.id, b.token);
+    const { start, end } = futureISOWithDuration(24, 60);
+    const cr = await app.inject({ method: "POST", url: `/api/v1/businesses/${bizA.id}/bookings`, headers: { authorization: `Bearer ${a.token}` }, payload: { startTime: start, endTime: end } });
+    expect(cr.statusCode).toBe(201);
+    const id = JSON.parse(cr.body).data.id;
+    const patch = await app.inject({ method: "PATCH", url: `/api/v1/businesses/${bizA.id}/bookings/${id}`, headers: { authorization: `Bearer ${a.token}` }, payload: { customerId: custB.id } });
+    expect(patch.statusCode).toBe(422);
+  });
+
+  it("rejects soft-deleted customer on create", async () => {
+    const { token } = await signup(`bkSD1${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const cust = await createCustomer(biz.id, token);
+    const del = await app.inject({ method: "DELETE", url: `/api/v1/businesses/${biz.id}/customers/${cust.id}`, headers: { authorization: `Bearer ${token}` } });
+    expect(del.statusCode).toBe(204);
+    const { start, end } = futureISOWithDuration(24, 60);
+    const res = await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/bookings`, headers: { authorization: `Bearer ${token}` }, payload: { customerId: cust.id, startTime: start, endTime: end } });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it("rejects soft-deleted customer on PATCH reassignment", async () => {
+    const { token } = await signup(`bkSD2${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const active = await createCustomer(biz.id, token);
+    const deleted = await createCustomer(biz.id, token);
+    await app.inject({ method: "DELETE", url: `/api/v1/businesses/${biz.id}/customers/${deleted.id}`, headers: { authorization: `Bearer ${token}` } });
+    const { start, end } = futureISOWithDuration(24, 60);
+    const cr = await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/bookings`, headers: { authorization: `Bearer ${token}` }, payload: { customerId: active.id, startTime: start, endTime: end } });
+    expect(cr.statusCode).toBe(201);
+    const id = JSON.parse(cr.body).data.id;
+    const patch = await app.inject({ method: "PATCH", url: `/api/v1/businesses/${biz.id}/bookings/${id}`, headers: { authorization: `Bearer ${token}` }, payload: { customerId: deleted.id } });
+    expect(patch.statusCode).toBe(422);
+  });
+
+  it("allows same-business active customer on PATCH reassignment", async () => {
+    const { token } = await signup(`bkSD3${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const custA = await createCustomer(biz.id, token);
+    const custB = await createCustomer(biz.id, token);
+    const { start, end } = futureISOWithDuration(24, 60);
+    const cr = await app.inject({ method: "POST", url: `/api/v1/businesses/${biz.id}/bookings`, headers: { authorization: `Bearer ${token}` }, payload: { customerId: custA.id, startTime: start, endTime: end } });
+    expect(cr.statusCode).toBe(201);
+    const id = JSON.parse(cr.body).data.id;
+    const patch = await app.inject({ method: "PATCH", url: `/api/v1/businesses/${biz.id}/bookings/${id}`, headers: { authorization: `Bearer ${token}` }, payload: { customerId: custB.id } });
+    expect(patch.statusCode).toBe(200);
+    expect(JSON.parse(patch.body).data.customerId).toBe(custB.id);
+  });
+
   it("rejects cross-tenant service", async () => {
     const a = await signup(`bk7A${Date.now()}@test.com`);
     const b = await signup(`bk7B${Date.now()}@test.com`);

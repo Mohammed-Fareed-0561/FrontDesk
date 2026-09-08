@@ -14,6 +14,12 @@ async function assertBusinessAccess(userId: string, businessId: string) {
   return b;
 }
 
+async function assertActiveCustomerForBusiness(businessId: string, customerId: string) {
+  const cust = await prisma.customer.findFirst({ where: { id: customerId, businessId, deletedAt: null } });
+  if (!cust) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Customer does not belong to this business" });
+  return cust;
+}
+
 const BOOKING_STATUSES = ["pending", "confirmed", "completed", "cancelled", "no_show"] as const;
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   pending: ["confirmed", "cancelled"],
@@ -128,8 +134,7 @@ export async function bookingsRoutes(app: FastifyInstance) {
     const { customerId, serviceId, staffId, locationId, startTime, endTime, durationMinutes, customerNotes, internalNotes, source } = parsed.data;
 
     if (customerId) {
-      const cust = await prisma.customer.findFirst({ where: { id: customerId, businessId } });
-      if (!cust) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Customer does not belong to this business" });
+      await assertActiveCustomerForBusiness(businessId, customerId);
     }
     let service: any = null;
     if (serviceId) {
@@ -260,8 +265,7 @@ export async function bookingsRoutes(app: FastifyInstance) {
     const data: any = {};
     if (parsed.data.customerId !== undefined) {
       if (parsed.data.customerId) {
-        const cust = await prisma.customer.findFirst({ where: { id: parsed.data.customerId, businessId } });
-        if (!cust) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Customer does not belong to this business" });
+        await assertActiveCustomerForBusiness(businessId, parsed.data.customerId);
         data.customerId = parsed.data.customerId;
       } else data.customerId = null;
     }
