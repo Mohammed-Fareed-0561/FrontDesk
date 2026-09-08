@@ -378,8 +378,30 @@ model WebsiteSection {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   page WebsitePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  components WebsiteComponent[]
 
   @@map("website_sections")
+}
+
+model WebsiteComponent {
+  id            String   @id @default(uuid())
+  sectionId     String   @map("section_id")
+  componentType String   @map("component_type")
+  sortOrder     Int      @default(0) @map("sort_order")
+  props         String   // JSON configuration
+  content       String?  // JSON content data
+  styleConfig   String?  @map("style_config") // JSON responsive/style configuration
+  assetRefs     String?  @map("asset_refs") // JSON media references
+  sourceType    String?  @map("source_type") // future template|marketplace provenance
+  sourceId      String?  @map("source_id")
+  sourceVersion String?  @map("source_version")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  section WebsiteSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId, sortOrder])
+  @@map("website_components")
 }
 
 model WebsiteVersion {

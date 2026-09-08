@@ -41,6 +41,7 @@ export async function cleanupDb() {
   await t.knowledgeDocument.deleteMany();
   await t.memoryEvent.deleteMany();
   await t.businessMemory.deleteMany();
+  await (t as any).websiteComponent?.deleteMany?.();
   await t.websiteSection.deleteMany();
   await t.websitePage.deleteMany();
   await t.websiteVersion.deleteMany();

@@ -12,6 +12,22 @@ async function assertBusinessAccess(userId: string, businessId: string) {
   return b;
 }
 
+const websiteTreeInclude: any = {
+  pages: {
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    include: {
+      sections: {
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        include: {
+          components: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
+        },
+      },
+    },
+  },
+};
+
+const jsonObject = z.record(z.unknown());
+
 const websitePatchSchema = z.object({
   name: z.string().optional(),
   themeConfig: z.any().optional(),
@@ -29,18 +45,58 @@ const websitePatchSchema = z.object({
       content: z.any(),
       styleConfig: z.any().optional(),
       visibilityConfig: z.any().optional(),
+      components: z.array(z.object({
+        id: z.string().optional(),
+        componentType: z.string().min(1).max(100),
+        sortOrder: z.number().int().min(0).optional(),
+        props: jsonObject,
+        content: jsonObject.optional(),
+        styleConfig: jsonObject.optional(),
+        assetRefs: z.array(z.string()).optional(),
+        sourceType: z.string().max(50).optional(),
+        sourceId: z.string().max(200).optional(),
+        sourceVersion: z.string().max(50).optional(),
+      })).optional(),
     })).optional()
   })).optional()
 });
+
+function componentData(component: any) {
+  return {
+    componentType: component.componentType,
+    sortOrder: component.sortOrder ?? 0,
+    props: JSON.stringify(component.props),
+    content: component.content === undefined ? undefined : JSON.stringify(component.content),
+    styleConfig: component.styleConfig === undefined ? undefined : JSON.stringify(component.styleConfig),
+    assetRefs: component.assetRefs === undefined ? undefined : JSON.stringify(component.assetRefs),
+    sourceType: component.sourceType,
+    sourceId: component.sourceId,
+    sourceVersion: component.sourceVersion,
+  };
+}
+
+async function persistComponents(sectionId: string, components: any[]) {
+  for (const component of components) {
+    const data = componentData(component);
+    if (component.id) {
+      const existing = await prisma.websiteComponent.findFirst({ where: { id: component.id, sectionId } });
+      if (existing) {
+        await prisma.websiteComponent.update({ where: { id: existing.id }, data });
+        continue;
+      }
+    }
+    await prisma.websiteComponent.create({ data: { sectionId, ...data } });
+  }
+}
 
 export async function websitesRoutes(app: FastifyInstance) {
   app.get("/api/v1/businesses/:businessId/website", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
     const userId = (req as any).userId as string;
     const { businessId } = req.params as any;
     await assertBusinessAccess(userId, businessId);
-    let website: any = await prisma.website.findFirst({ where: { businessId }, include: { pages: { include: { sections: true } }, versions: { orderBy: { versionNumber: "desc" }, take: 5 } } });
+    let website: any = await prisma.website.findFirst({ where: { businessId }, include: { ...websiteTreeInclude, versions: { orderBy: { versionNumber: "desc" }, take: 5 } } });
     if (!website) {
-      website = await (prisma.website.create as any)({ data: { businessId, name: "Website", status: "draft" }, include: { pages: { include: { sections: true } }, versions: true } });
+      website = await (prisma.website.create as any)({ data: { businessId, name: "Website", status: "draft" }, include: { ...websiteTreeInclude, versions: true } });
     }
     return reply.send({ success: true, data: website });
   });
@@ -71,7 +127,7 @@ export async function websitesRoutes(app: FastifyInstance) {
           const existing = await prisma.websitePage.findFirst({ where: { websiteId: website.id, slug: p.slug } });
           if (existing) {
             page = existing;
-            await prisma.websitePage.update({ where: { id: page.id }, data: { title: p.title, pageType: p.pageType, seoConfig: p.seoConfig ? JSON.stringify(p.seoConfig) : undefined } });
+            await prisma.websitePage.update({ where: { id: page.id }, data: { title: p.title, pageType: p.pageType, sortOrder: p.sortOrder, seoConfig: p.seoConfig ? JSON.stringify(p.seoConfig) : undefined } });
           } else {
             page = await prisma.websitePage.create({ data: { websiteId: website.id, title: p.title, slug: p.slug, pageType: p.pageType, sortOrder: p.sortOrder || 0, seoConfig: p.seoConfig ? JSON.stringify(p.seoConfig) : undefined } });
           }
@@ -82,15 +138,17 @@ export async function websitesRoutes(app: FastifyInstance) {
               const sec = await prisma.websiteSection.findFirst({ where: { id: s.id, pageId: page.id } });
               if (sec) {
                 await prisma.websiteSection.update({ where: { id: sec.id }, data: { sectionType: s.sectionType, sortOrder: s.sortOrder, content: JSON.stringify(s.content), styleConfig: s.styleConfig ? JSON.stringify(s.styleConfig) : undefined, visibilityConfig: s.visibilityConfig ? JSON.stringify(s.visibilityConfig) : undefined } });
+                if (s.components) await persistComponents(sec.id, s.components);
                 continue;
               }
             }
-            await prisma.websiteSection.create({ data: { pageId: page.id, sectionType: s.sectionType, sortOrder: s.sortOrder || 0, content: JSON.stringify(s.content), styleConfig: s.styleConfig ? JSON.stringify(s.styleConfig) : undefined, visibilityConfig: s.visibilityConfig ? JSON.stringify(s.visibilityConfig) : undefined } });
+            const section = await prisma.websiteSection.create({ data: { pageId: page.id, sectionType: s.sectionType, sortOrder: s.sortOrder || 0, content: JSON.stringify(s.content), styleConfig: s.styleConfig ? JSON.stringify(s.styleConfig) : undefined, visibilityConfig: s.visibilityConfig ? JSON.stringify(s.visibilityConfig) : undefined } });
+            if (s.components) await persistComponents(section.id, s.components);
           }
         }
       }
     }
-    const updated = await prisma.website.findFirst({ where: { id: website.id }, include: { pages: { include: { sections: true } } } });
+    const updated = await prisma.website.findFirst({ where: { id: website.id }, include: websiteTreeInclude });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_UPDATED", entityType: "website", entityId: website.id } });
     return reply.send({ success: true, data: updated });
   });
@@ -99,7 +157,7 @@ export async function websitesRoutes(app: FastifyInstance) {
     const userId = (req as any).userId as string;
     const { businessId } = req.params as any;
     await assertBusinessAccess(userId, businessId);
-    const website = await prisma.website.findFirst({ where: { businessId }, include: { pages: { include: { sections: true } } } });
+    const website = await prisma.website.findFirst({ where: { businessId }, include: websiteTreeInclude });
     if (!website) throw Errors.notFound("Website");
     // render preview would be frontend; return structured config
     return reply.send({ success: true, data: website });
@@ -119,7 +177,7 @@ export async function websitesRoutes(app: FastifyInstance) {
     const userId = (req as any).userId as string;
     const { businessId } = req.params as any;
     await assertBusinessAccess(userId, businessId);
-    const website = await prisma.website.findFirst({ where: { businessId }, include: { pages: { include: { sections: true } } } });
+    const website = await prisma.website.findFirst({ where: { businessId }, include: websiteTreeInclude });
     if (!website) throw Errors.notFound("Website");
     // basic validation: need at least one page
     if (!website.pages.length) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Website has no pages" });
@@ -155,9 +213,9 @@ export async function websitesRoutes(app: FastifyInstance) {
     const { slug } = req.params as any;
     const business = await prisma.business.findFirst({ where: { slug } });
     if (!business) throw Errors.notFound("Business");
-    const website = await prisma.website.findFirst({ where: { businessId: business.id, status: "published" }, include: { pages: { include: { sections: true } } } });
+    const website = await prisma.website.findFirst({ where: { businessId: business.id, status: "published" }, include: websiteTreeInclude });
     if (!website) {
-      const draft = await prisma.website.findFirst({ where: { businessId: business.id }, include: { pages: { include: { sections: true } } } });
+      const draft = await prisma.website.findFirst({ where: { businessId: business.id }, include: websiteTreeInclude });
       if (!draft) throw Errors.notFound("Website");
       return reply.send({ success: true, data: { website: draft, business: { name: business.name, slug: business.slug, description: business.description, phone: business.phone, email: business.email } } });
     }
