@@ -121,6 +121,28 @@ describe("Website Builder Core", () => {
     });
     expect([403, 404].includes(outsiderWrite.statusCode)).toBe(true);
 
+    const componentId = homeSection.components[0].id;
+    const outsiderDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/businesses/${business.id}/website/components/${componentId}`,
+      headers: { authorization: `Bearer ${outsider.token}` },
+    });
+    expect([403, 404].includes(outsiderDelete.statusCode)).toBe(true);
+
+    const ownerDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/businesses/${business.id}/website/components/${componentId}`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+    expect(ownerDelete.statusCode).toBe(200);
+    const afterDelete = JSON.parse((await app.inject({
+      method: "GET",
+      url: `/api/v1/businesses/${business.id}/website`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    })).body).data;
+    const afterDeleteHome = afterDelete.pages[0].sections.find((section: any) => section.sectionType === "hero-custom");
+    expect(afterDeleteHome.components).toHaveLength(0);
+
     const otherWebsite = await app.inject({
       method: "GET",
       url: `/api/v1/businesses/${outsiderBusiness.id}/website`,

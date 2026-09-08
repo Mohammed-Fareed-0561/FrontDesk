@@ -251,6 +251,23 @@ export type WebsiteSection = {
   visibilityConfig: string | null;
   createdAt: string;
   updatedAt: string;
+  components?: WebsiteComponent[];
+};
+
+export type WebsiteComponent = {
+  id: string;
+  sectionId: string;
+  componentType: string;
+  sortOrder: number;
+  props: string;
+  content: string | null;
+  styleConfig: string | null;
+  assetRefs: string | null;
+  sourceType: string | null;
+  sourceId: string | null;
+  sourceVersion: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type WebsiteVersion = {

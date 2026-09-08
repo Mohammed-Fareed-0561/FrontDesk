@@ -153,6 +153,20 @@ export async function websitesRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: updated });
   });
 
+  app.delete("/api/v1/businesses/:businessId/website/components/:componentId", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
+    const { businessId, componentId } = req.params as any;
+    await assertBusinessAccess(userId, businessId);
+    const component = await prisma.websiteComponent.findUnique({
+      where: { id: componentId },
+      include: { section: { include: { page: { include: { website: true } } } } },
+    });
+    if (!component || component.section.page.website.businessId !== businessId) throw Errors.notFound("WebsiteComponent");
+    await prisma.websiteComponent.delete({ where: { id: component.id } });
+    await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_COMPONENT_DELETED", entityType: "website_component", entityId: component.id } });
+    return reply.send({ success: true, data: { id: component.id } });
+  });
+
   app.get("/api/v1/businesses/:businessId/website/preview", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
     const userId = (req as any).userId as string;
     const { businessId } = req.params as any;
