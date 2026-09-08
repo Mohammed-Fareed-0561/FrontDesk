@@ -122,7 +122,7 @@ export async function handleNotificationEvent(
       message: result.message,
       severity: result.severity,
       sourceType: result.sourceType,
-      sourceId: result.sourceId || aggregateId || "",
+      sourceId: payload.notificationSourceId || result.sourceId || aggregateId || "",
     });
 
     // Audit: record NOTIFICATION_CREATED only when a new notification was actually inserted.

@@ -38,6 +38,15 @@ function futureISOWithDuration(hoursAhead = 24, durationMin = 60) {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+async function waitFor<T>(read: () => Promise<T>, predicate: (value: T) => boolean, attempts = 100): Promise<T> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const value = await read();
+    if (predicate(value)) return value;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  throw new Error(`Condition was not met after ${attempts} event-loop polls`);
+}
+
 describe("Bookings — P0", () => {
   it("creates booking", async () => {
     const { token } = await signup(`bk1${Date.now()}@test.com`);
@@ -696,5 +705,82 @@ describe("Bookings — lifecycle integrity", () => {
       where: { businessId: biz.id, aggregateId: booking.id },
     });
     expect(lifecycleEvents.filter((event) => ["BOOKING_CONFIRMED", "BOOKING_CANCELLED"].includes(event.eventType))).toHaveLength(1);
+  });
+
+  it("integrates booking lifecycle events with exactly-once notifications", async () => {
+    const owner = await signup(`bkIntegration${Date.now()}@test.com`);
+    const outsider = await signup(`bkIntegrationOther${Date.now()}@test.com`);
+    const biz = await createBusiness(owner.token);
+    const customer = await createCustomer(biz.id, owner.token);
+    const { start, end } = futureISOWithDuration(48, 60);
+
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings`,
+      headers: { authorization: `Bearer ${owner.token}` },
+      payload: { customerId: customer.id, startTime: start, endTime: end },
+    });
+    expect(created.statusCode).toBe(201);
+    const booking = JSON.parse(created.body).data;
+    expect(booking.customerId).toBe(customer.id);
+    expect(new Date(booking.startTime).toISOString()).toBe(start);
+    expect(new Date(booking.endTime).toISOString()).toBe(end);
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/confirm`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+    expect(confirm.statusCode).toBe(200);
+    expect(JSON.parse(confirm.body).data.status).toBe("confirmed");
+
+    const confirmedNotification = await waitFor(
+      () => prisma.notification.findMany({
+        where: { businessId: biz.id, sourceType: "booking", sourceId: `BOOKING_CONFIRMED:${booking.id}`, title: "Booking Confirmed" },
+      }),
+      (notifications) => notifications.length === 1,
+    );
+    expect(confirmedNotification).toHaveLength(1);
+
+    const confirmedEvent = await prisma.domainEvent.findMany({
+      where: { businessId: biz.id, aggregateId: booking.id, eventType: "BOOKING_CONFIRMED" },
+    });
+    expect(confirmedEvent).toHaveLength(1);
+
+    const repeatedConfirm = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/confirm`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+    expect(repeatedConfirm.statusCode).toBe(422);
+
+    const cancel = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/cancel`,
+      headers: { authorization: `Bearer ${owner.token}` },
+    });
+    expect(cancel.statusCode).toBe(200);
+    expect(JSON.parse(cancel.body).data.status).toBe("cancelled");
+
+    const cancelledNotification = await waitFor(
+      () => prisma.notification.findMany({
+        where: { businessId: biz.id, sourceType: "booking", sourceId: `BOOKING_CANCELLED:${booking.id}`, title: "Booking Cancelled" },
+      }),
+      (notifications) => notifications.length === 1,
+    );
+    expect(cancelledNotification).toHaveLength(1);
+
+    const finalBooking = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
+    expect(finalBooking.status).toBe("cancelled");
+    expect(await prisma.domainEvent.count({ where: { businessId: biz.id, aggregateId: booking.id, eventType: "BOOKING_CONFIRMED" } })).toBe(1);
+    expect(await prisma.domainEvent.count({ where: { businessId: biz.id, aggregateId: booking.id, eventType: "BOOKING_CANCELLED" } })).toBe(1);
+    expect(await prisma.notification.count({ where: { businessId: biz.id, sourceType: "booking", title: { in: ["Booking Confirmed", "Booking Cancelled"] } } })).toBe(2);
+
+    const outsiderNotifications = await app.inject({
+      method: "GET",
+      url: `/api/v1/businesses/${biz.id}/notifications`,
+      headers: { authorization: `Bearer ${outsider.token}` },
+    });
+    expect([403, 404].includes(outsiderNotifications.statusCode)).toBe(true);
   });
 });

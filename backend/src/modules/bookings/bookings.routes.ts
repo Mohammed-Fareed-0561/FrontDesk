@@ -326,7 +326,14 @@ export async function bookingsRoutes(app: FastifyInstance) {
       include: { customer: true, service: true },
     });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: `BOOKING_${target.toUpperCase()}`, entityType: "booking", entityId: bookingId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) } });
-    await emitAndDispatch({ businessId, eventType: `BOOKING_${target.toUpperCase()}`, aggregateType: "booking", aggregateId: bookingId, payload: JSON.stringify({ bookingId, target }) });
+    const eventType = `BOOKING_${target.toUpperCase()}`;
+    await emitAndDispatch({
+      businessId,
+      eventType,
+      aggregateType: "booking",
+      aggregateId: bookingId,
+      payload: JSON.stringify({ bookingId, bookingNumber: updated.bookingNumber, target, notificationSourceId: `${eventType}:${bookingId}` }),
+    });
     return updated;
   }
 
