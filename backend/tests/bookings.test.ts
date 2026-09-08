@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { createTestApp, cleanupDb } from "./helpers.js";
 import { prisma } from "../src/infrastructure/database/client.js";
 
@@ -85,6 +85,44 @@ describe("Bookings — P0", () => {
     const upd = await app.inject({ method: "PATCH", url: `/api/v1/businesses/${biz.id}/bookings/${id}`, headers: { authorization: `Bearer ${token}` }, payload: { customerNotes: "new note" } });
     expect(upd.statusCode).toBe(200);
     expect(JSON.parse(upd.body).data.customerNotes).toBe("new note");
+  });
+
+  it("preserves the start-before-end invariant when rescheduling", async () => {
+    const { token } = await signup(`bkDate${Date.now()}@test.com`);
+    const biz = await createBusiness(token);
+    const original = futureISOWithDuration(24, 60);
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/v1/businesses/${biz.id}/bookings`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { startTime: original.start, endTime: original.end },
+    });
+    expect(created.statusCode).toBe(201);
+    const booking = JSON.parse(created.body).data;
+
+    const validStart = new Date(new Date(original.start).getTime() + 2 * 3600000);
+    const validEnd = new Date(validStart.getTime() + 60 * 60000);
+    const validPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { startTime: validStart.toISOString(), endTime: validEnd.toISOString() },
+    });
+    expect(validPatch.statusCode).toBe(200);
+    expect(JSON.parse(validPatch.body).data.startTime).toBe(validStart.toISOString());
+    expect(JSON.parse(validPatch.body).data.endTime).toBe(validEnd.toISOString());
+
+    const invalidPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { startTime: validEnd.toISOString(), endTime: validStart.toISOString() },
+    });
+    expect(invalidPatch.statusCode).toBe(422);
+
+    const persisted = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
+    expect(persisted.startTime.toISOString()).toBe(validStart.toISOString());
+    expect(persisted.endTime.toISOString()).toBe(validEnd.toISOString());
   });
 
   it("enforces tenant isolation", async () => {
@@ -611,23 +649,43 @@ describe("Bookings — lifecycle integrity", () => {
     const biz = await createBusiness(token);
     const booking = await createPendingBooking(token, biz.id, 31);
     const headers = { authorization: `Bearer ${token}` };
+    const originalUpdateMany = prisma.booking.updateMany.bind(prisma.booking);
+    let mutationAttempts = 0;
+    let releaseMutation!: () => void;
+    const mutationBoundary = new Promise<void>((resolve) => { releaseMutation = resolve; });
+    const updateManySpy = vi.spyOn(prisma.booking, "updateMany").mockImplementation(async (args: any) => {
+      if (args?.where?.id === booking.id && args?.where?.status === "pending") {
+        mutationAttempts += 1;
+        if (mutationAttempts === 2) releaseMutation();
+        await mutationBoundary;
+      }
+      return originalUpdateMany(args);
+    });
 
-    const [confirm, cancel] = await Promise.all([
-      app.inject({
-        method: "POST",
-        url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/confirm`,
-        headers,
-      }),
-      app.inject({
-        method: "POST",
-        url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/cancel`,
-        headers,
-      }),
-    ]);
+    let confirm: any;
+    let cancel: any;
+    try {
+      [confirm, cancel] = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/confirm`,
+          headers,
+        }),
+        app.inject({
+          method: "POST",
+          url: `/api/v1/businesses/${biz.id}/bookings/${booking.id}/cancel`,
+          headers,
+        }),
+      ]);
+    } finally {
+      updateManySpy.mockRestore();
+    }
 
     expect([confirm.statusCode, cancel.statusCode].sort()).toEqual([200, 422]);
+    expect(mutationAttempts).toBe(2);
     const finalBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
-    expect(["confirmed", "cancelled"]).toContain(finalBooking?.status);
+    const successfulStatus = confirm.statusCode === 200 ? "confirmed" : "cancelled";
+    expect(finalBooking?.status).toBe(successfulStatus);
 
     const lifecycleAudits = await prisma.auditLog.findMany({
       where: { businessId: biz.id, entityId: booking.id },
