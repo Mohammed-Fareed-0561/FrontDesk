@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { apiClient } from "@/lib/api/client";
 import { useBusiness } from "@/hooks/useBusiness";
 import type { Website, WebsiteComponent, WebsitePage as WebsitePageRecord, WebsiteSection } from "@/types";
+import type { WebsiteTheme } from "@/providers/ThemeProvider";
+import { ThemeEditor } from "@/components/website/ThemeEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -101,6 +103,7 @@ export default function WebsitePage() {
   const [editingPageId, setEditingPageId] = useState<string | null>(null);
   const [editPageTitle, setEditPageTitle] = useState("");
   const [editPageSlug, setEditPageSlug] = useState("");
+  const [themeSaving, setThemeSaving] = useState(false);
 
   const loadWebsite = useCallback(async () => {
     if (!selectedId) return;
@@ -220,6 +223,23 @@ export default function WebsitePage() {
     }
   };
 
+  const saveTheme = async (theme: WebsiteTheme) => {
+    if (!selectedId || !website) return;
+    setThemeSaving(true);
+    try {
+      await apiClient(`/businesses/${selectedId}/website/theme`, {
+        method: "PATCH",
+        body: theme,
+      });
+      setWebsite({ ...website, themeConfig: JSON.stringify(theme) });
+      toast({ title: "Theme saved" });
+    } catch (error: any) {
+      toast({ title: "Could not save theme", description: error.message });
+    } finally {
+      setThemeSaving(false);
+    }
+  };
+
   const deletePage = async (page: WebsitePageRecord) => {
     if (!selectedId || !website) return;
     setPageSaving(true);
@@ -293,7 +313,10 @@ export default function WebsitePage() {
 
         <Card><CardHeader><CardTitle>{currentPage?.title || "Page canvas"}</CardTitle><CardDescription>{currentPage ? `/${currentPage.slug} · Select a component to inspect it.` : "Select a page to begin."}</CardDescription></CardHeader><CardContent className="space-y-4">{!currentPage && <p className="py-12 text-center text-sm text-muted-foreground">This website has no editable pages.</p>}{ordered(currentPage?.sections).map((section) => <SectionCanvas key={section.id} section={section} selectedId={componentId} onSelect={setComponentId} onMove={moveComponent} />)}{currentPage && !currentPage.sections?.length && <p className="py-12 text-center text-sm text-muted-foreground">This page has no sections.</p>}</CardContent></Card>
 
-        <Card className="h-fit"><CardHeader><CardTitle>Properties</CardTitle><CardDescription>{selectedComponent ? selectedComponent.componentType : "No component selected"}</CardDescription></CardHeader><CardContent>{!selectedComponent ? <p className="text-sm text-muted-foreground">Select a component from the canvas to edit supported configuration.</p> : <ComponentProperties component={selectedComponent} onChange={updateComponent} onJsonChange={updateJsonField} onDelete={deleteComponent} deleting={deleting} />}</CardContent></Card>
+        <div className="space-y-4">
+          <Card className="h-fit"><CardHeader><CardTitle>Properties</CardTitle><CardDescription>{selectedComponent ? selectedComponent.componentType : "No component selected"}</CardDescription></CardHeader><CardContent>{!selectedComponent ? <p className="text-sm text-muted-foreground">Select a component from the canvas to edit supported configuration.</p> : <ComponentProperties component={selectedComponent} onChange={updateComponent} onJsonChange={updateJsonField} onDelete={deleteComponent} deleting={deleting} />}</CardContent></Card>
+          <ThemeEditor themeConfig={website.themeConfig} onSave={saveTheme} />
+        </div>
       </div>
     </div>
   );

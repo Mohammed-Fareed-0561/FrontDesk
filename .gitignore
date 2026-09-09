@@ -11,6 +11,7 @@ build/
 coverage/
 .turbo/
 .vercel/
+*.tsbuildinfo
 
 # Environment - NEVER push secrets (keeps .env.example)
 .env

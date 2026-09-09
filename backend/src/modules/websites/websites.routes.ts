@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
+import { themeConfigSchema, validateThemeConfig, getThemeConfig } from "../../shared/schemas/theme.js";
 
 async function assertBusinessAccess(userId: string, businessId: string) {
   const b = await prisma.business.findUnique({ where: { id: businessId } });
@@ -64,7 +65,7 @@ function pageData(data: z.infer<typeof pageCreateSchema>) {
 
 const websitePatchSchema = z.object({
   name: z.string().optional(),
-  themeConfig: z.any().optional(),
+  themeConfig: themeConfigSchema.optional(),
   pages: z.array(z.object({
     id: z.string().optional(),
     title: z.string(),
@@ -316,6 +317,32 @@ export async function websitesRoutes(app: FastifyInstance) {
     await prisma.website.update({ where: { id: website.id }, data: { draftVersionId: restored.id } });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_RESTORED", entityType: "website", entityId: website.id, afterData: JSON.stringify({ restoredVersionId: restored.id, fromVersionId: versionId }) } });
     return reply.send({ success: true, data: restored });
+  });
+
+  // Theme endpoints
+  app.get("/api/v1/businesses/:businessId/website/theme", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
+    const { businessId } = req.params as any;
+    const website = await getOwnedWebsite(userId, businessId);
+    const theme = getThemeConfig(website.themeConfig);
+    return reply.send({ success: true, data: theme });
+  });
+
+  app.patch("/api/v1/businesses/:businessId/website/theme", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
+    const { businessId } = req.params as any;
+    await assertBusinessAccess(userId, businessId);
+    const validation = validateThemeConfig(req.body);
+    if (!validation.success) {
+      throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid theme configuration", details: validation.error });
+    }
+    let website = await prisma.website.findFirst({ where: { businessId } });
+    if (!website) {
+      website = await prisma.website.create({ data: { businessId, name: "Website", status: "draft" } });
+    }
+    await prisma.website.update({ where: { id: website.id }, data: { themeConfig: JSON.stringify(validation.data) } });
+    await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_THEME_UPDATED", entityType: "website", entityId: website.id } });
+    return reply.send({ success: true, data: validation.data });
   });
 
   // public website
