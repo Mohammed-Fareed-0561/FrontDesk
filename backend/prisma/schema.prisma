@@ -594,7 +594,7 @@ model MediaAsset {
   originalFilename     String?   @map("original_filename")
   storageKey           String    @map("storage_key")
   mimeType             String?   @map("mime_type")
-  mediaType            String    @default("IMAGE") // IMAGE|VIDEO|DOCUMENT
+  mediaType            String    @default("IMAGE") @map("media_type") // IMAGE|VIDEO|DOCUMENT
   fileSize             Int?      @map("file_size")
   width                Int?
   height               Int?
