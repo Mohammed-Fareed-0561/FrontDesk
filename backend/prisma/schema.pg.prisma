@@ -562,25 +562,31 @@ model SectionPackComponent {
 
 // Media
 model MediaAsset {
-  id         String   @id @default(uuid())
-  businessId String   @map("business_id")
-  uploadedBy String?  @map("uploaded_by")
-  fileName   String?  @map("file_name")
-  storageKey String   @map("storage_key")
-  mimeType   String?  @map("mime_type")
-  fileSize   Int?     @map("file_size")
-  width      Int?
-  height     Int?
-  altText    String?  @map("alt_text")
-  status     String   @default("active")
-  metadata   String?
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-  deletedAt  DateTime? @map("deleted_at")
+  id                   String    @id @default(uuid())
+  businessId           String    @map("business_id")
+  uploadedBy           String?   @map("uploaded_by")
+  fileName             String?   @map("file_name")
+  originalFilename     String?   @map("original_filename")
+  storageKey           String    @map("storage_key")
+  mimeType             String?   @map("mime_type")
+  mediaType            String    @default("IMAGE") // IMAGE|VIDEO|DOCUMENT
+  fileSize             Int?      @map("file_size")
+  width                Int?
+  height               Int?
+  duration             Float?    // seconds for video/audio
+  altText              String?   @map("alt_text")
+  title                String?
+  thumbnailStorageKey  String?   @map("thumbnail_storage_key")
+  status               String    @default("active")
+  metadata             String?
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  @@index([businessId])
+  @@index([businessId, mediaType])
+  @@index([businessId, status])
   @@map("media_assets")
 }
 

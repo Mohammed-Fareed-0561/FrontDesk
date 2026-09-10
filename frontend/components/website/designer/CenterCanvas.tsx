@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { Button } from "@/components/ui/button";
 import { Globe } from "lucide-react";
 import type { WebsitePage, WebsiteSection, WebsiteComponent } from "@/types";
 import { ordered, parseObject, componentLabel } from "@/lib/designer/utils";
@@ -21,6 +20,29 @@ const DEVICE_WIDTHS: Record<DeviceMode, string> = {
   tablet: "768px",
   mobile: "375px",
 };
+
+function buildFilterCSS(config: Record<string, any>): string {
+  const parts: string[] = [];
+  if (config.brightness !== undefined && config.brightness !== 100) parts.push(`brightness(${config.brightness / 100})`);
+  if (config.contrast !== undefined && config.contrast !== 100) parts.push(`contrast(${config.contrast / 100})`);
+  if (config.saturation !== undefined && config.saturation !== 100) parts.push(`saturate(${config.saturation / 100})`);
+  if (config.blur !== undefined && config.blur > 0) parts.push(`blur(${config.blur}px)`);
+  if (config.grayscale !== undefined && config.grayscale > 0) parts.push(`grayscale(${config.grayscale / 100})`);
+  if (config.hueRotate !== undefined && config.hueRotate > 0) parts.push(`hue-rotate(${config.hueRotate}deg)`);
+  return parts.length > 0 ? parts.join(" ") : "none";
+}
+
+function buildObjectPosition(config: Record<string, any>): string {
+  const pos = config.position || "center";
+  const map: Record<string, string> = {
+    center: "50% 50%",
+    top: "50% 0%",
+    bottom: "50% 100%",
+    left: "0% 50%",
+    right: "100% 50%",
+  };
+  return map[pos] || map.center;
+}
 
 export function CenterCanvas({
   page,
@@ -96,17 +118,84 @@ function SectionRenderer({
   onSelect: (type: "component" | "section", id: string) => void;
 }) {
   const content = parseObject(section.content);
+  const style = parseObject(section.styleConfig);
   const components = useMemo(() => ordered(section.components), [section.components]);
   const isSelected = selection.type === "section" && selection.id === section.id;
+  const bgMedia = style.backgroundMedia || {};
+  const hasVideo = bgMedia.src && bgMedia.type === "video";
+  const hasImage = bgMedia.src && bgMedia.type === "image";
+  const filterCSS = buildFilterCSS(bgMedia);
+  const objectPos = buildObjectPosition(bgMedia);
 
   return (
     <div
-      className={`relative group ${isSelected ? "ring-2 ring-primary" : "hover:ring-1 hover:ring-primary/50"}`}
+      className={`relative group overflow-hidden ${isSelected ? "ring-2 ring-primary" : "hover:ring-1 hover:ring-primary/50"}`}
+      style={{
+        backgroundColor: style.backgroundColor || undefined,
+        padding: style.padding || undefined,
+      }}
       onClick={(e) => {
         e.stopPropagation();
         onSelect("section", section.id);
       }}
     >
+      {/* Background Video */}
+      {hasVideo && (
+        <div className="absolute inset-0 z-0">
+          <video
+            src={bgMedia.src}
+            autoPlay={bgMedia.autoplay !== false}
+            muted={bgMedia.muted !== false}
+            loop={bgMedia.loop !== false}
+            playsInline
+            poster={bgMedia.poster}
+            className="absolute inset-0 w-full h-full"
+            style={{
+              objectFit: bgMedia.fit || "cover",
+              objectPosition: objectPos,
+              opacity: (bgMedia.opacity ?? 100) / 100,
+              filter: filterCSS !== "none" ? filterCSS : undefined,
+            }}
+          />
+          {/* Overlay */}
+          {bgMedia.overlay?.enabled && (
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundColor: bgMedia.overlay.color || "#000000",
+                opacity: (bgMedia.overlay.opacity ?? 30) / 100,
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Background Image */}
+      {hasImage && !hasVideo && (
+        <div className="absolute inset-0 z-0">
+          <img
+            src={bgMedia.src}
+            alt=""
+            className="absolute inset-0 w-full h-full"
+            style={{
+              objectFit: bgMedia.fit || "cover",
+              objectPosition: objectPos,
+              opacity: (bgMedia.opacity ?? 100) / 100,
+              filter: filterCSS !== "none" ? filterCSS : undefined,
+            }}
+          />
+          {bgMedia.overlay?.enabled && (
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundColor: bgMedia.overlay.color || "#000000",
+                opacity: (bgMedia.overlay.opacity ?? 30) / 100,
+              }}
+            />
+          )}
+        </div>
+      )}
+
       {/* Section label on hover */}
       <div className="absolute top-2 left-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
         <span className="inline-flex items-center rounded bg-foreground/80 px-2 py-0.5 text-[10px] font-medium text-white">
@@ -114,31 +203,40 @@ function SectionRenderer({
         </span>
       </div>
 
-      {/* Section heading from content */}
-      {content.heading && (
-        <div className="px-6 pt-8 pb-2">
-          <h2 className="text-2xl font-bold">{content.heading}</h2>
-        </div>
-      )}
-
-      {/* Components */}
-      <div className="p-6">
-        {components.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted-foreground border border-dashed rounded-lg">
-            Empty section — add elements from the left panel
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {components.map((component) => (
-              <ComponentRenderer
-                key={component.id}
-                component={component}
-                isSelected={selection.type === "component" && selection.id === component.id}
-                onSelect={() => onSelect("component", component.id)}
-              />
-            ))}
+      {/* Content (on top of background media) */}
+      <div className={`relative z-[1] ${(hasVideo || hasImage) ? "text-white" : ""}`}>
+        {content.heading && (
+          <div className="px-6 pt-8 pb-2">
+            <h2 className="text-2xl font-bold">{content.heading}</h2>
           </div>
         )}
+
+        {content.subheading && (hasVideo || hasImage) && (
+          <div className="px-6 pb-4">
+            <p className="text-sm opacity-90">{content.subheading}</p>
+          </div>
+        )}
+
+        <div className="p-6">
+          {components.length === 0 ? (
+            <div className={`py-8 text-center text-sm border border-dashed rounded-lg ${
+              (hasVideo || hasImage) ? "border-white/30 text-white/70" : "text-muted-foreground"
+            }`}>
+              Empty section — add elements from the left panel
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {components.map((component) => (
+                <ComponentRenderer
+                  key={component.id}
+                  component={component}
+                  isSelected={selection.type === "component" && selection.id === component.id}
+                  onSelect={() => onSelect("component", component.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -157,7 +255,9 @@ function ComponentRenderer({
 }) {
   const content = parseObject(component.content);
   const props = parseObject(component.props);
+  const styleConfig = parseObject(component.styleConfig);
   const kind = component.componentType.toLowerCase();
+  const filterCSS = buildFilterCSS(styleConfig);
 
   return (
     <div
@@ -202,6 +302,10 @@ function ComponentRenderer({
               src={content.src}
               alt={content.alt || "Photo"}
               className="w-full h-48 object-cover rounded-lg"
+              style={{
+                opacity: (styleConfig.opacity ?? 100) / 100,
+                filter: filterCSS !== "none" ? filterCSS : undefined,
+              }}
             />
           ) : (
             <div className="w-full h-48 bg-muted rounded-lg flex items-center justify-center">
@@ -215,11 +319,25 @@ function ComponentRenderer({
       {(kind === "gallery" || kind === "carousel") && (
         <div className="py-2">
           <div className="grid grid-cols-3 gap-2">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="aspect-square bg-muted rounded-lg flex items-center justify-center">
-                <span className="text-xs text-muted-foreground">Photo {i + 1}</span>
-              </div>
-            ))}
+            {content.images && content.images.length > 0 ? (
+              content.images.map((img: any, i: number) => (
+                <div key={i} className="aspect-square bg-muted rounded-lg overflow-hidden">
+                  {img.src ? (
+                    <img src={img.src} alt={img.alt || ""} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="text-xs text-muted-foreground">Photo {i + 1}</span>
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              [0, 1, 2].map((i) => (
+                <div key={i} className="aspect-square bg-muted rounded-lg flex items-center justify-center">
+                  <span className="text-xs text-muted-foreground">Photo {i + 1}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

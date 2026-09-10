@@ -20,6 +20,7 @@ export interface ApiOptions {
   headers?: Record<string, string>;
   skipAuth?: boolean;
   params?: Record<string, string | number | boolean | undefined>;
+  isFormData?: boolean;
 }
 
 function getAuthToken(): string | null {
@@ -49,13 +50,13 @@ function buildUrl(path: string, params?: ApiOptions["params"]): string {
 }
 
 export async function apiClient<T = any>(path: string, options: ApiOptions = {}): Promise<T> {
-  const { method = "GET", body, headers = {}, skipAuth = false, params } = options;
+  const { method = "GET", body, headers = {}, skipAuth = false, params, isFormData } = options;
 
   const url = buildUrl(path, params);
   const token = skipAuth ? null : getAuthToken();
 
   const fetchHeaders: Record<string, string> = { ...headers };
-  if (body !== undefined) fetchHeaders["Content-Type"] = "application/json";
+  if (body !== undefined && !isFormData) fetchHeaders["Content-Type"] = "application/json";
 
   if (token) {
     fetchHeaders["Authorization"] = `Bearer ${token}`;
@@ -65,7 +66,7 @@ export async function apiClient<T = any>(path: string, options: ApiOptions = {})
     method,
     headers: fetchHeaders,
     credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
     signal: AbortSignal.timeout(60000),
   });
 

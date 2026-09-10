@@ -542,6 +542,7 @@ export default function WebsiteDesignerPage() {
             selection={selection}
             component={selectedComponent}
             section={selectedSection}
+            businessId={selectedId || ""}
             onUpdateComponent={updateComponent}
             onDeleteComponent={deleteComponent}
             onMoveComponent={moveComponent}
