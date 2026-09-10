@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 const API = process.env.API_URL || "http://localhost:4000/api/v1";
 
-test.describe("Website page management", () => {
+test.describe("Website page management (new designer)", () => {
   test("creates, selects, renames, persists, edits, and deletes a page", async ({ page, request }) => {
     const email = `website-pages-${Date.now()}@test.com`;
     const signup = await request.post(`${API}/auth/signup`, {
@@ -41,34 +41,59 @@ test.describe("Website page management", () => {
     expect(seed.ok()).toBeTruthy();
 
     await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
-    await page.goto(`/dashboard/website`);
-    await expect(page.getByRole("heading", { name: "Website editor" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Select Home page" })).toBeVisible();
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
+    await page.goto("/dashboard/website");
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({ timeout: 15000 });
 
+    // Switch to Pages tab
+    await page.getByRole("button", { name: "Pages", exact: true }).click();
+    await expect(page.getByText("Manage your website pages")).toBeVisible();
+
+    // Home page is listed
+    await expect(page.locator(".truncate").filter({ hasText: "Home" }).first()).toBeVisible();
+
+    // Create a new page via inline form
+    await page.getByRole("button", { name: "Add page" }).click();
+    await page.getByLabel("Page name").fill("Contact");
+    await page.getByLabel("Slug").fill("contact");
     await page.getByRole("button", { name: "Create page" }).click();
-    await page.getByLabel("Page title").fill("Contact");
-    await page.getByLabel("Page slug").fill("contact");
-    await page.getByRole("button", { name: "Submit create page" }).click();
-    await expect(page.getByRole("button", { name: "Select Contact page" })).toBeVisible();
-    await page.getByRole("button", { name: "Select Contact page" }).click();
-    await expect(page.getByRole("heading", { name: "Contact" })).toBeVisible();
+    await expect(page.getByText("Page created", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "Edit Contact page" }).click();
-    await page.getByLabel("Page title").fill("Contact us");
-    await page.getByLabel("Page slug").fill("contact-us");
-    await page.getByRole("button", { name: "Save page" }).click();
-    await expect(page.getByRole("button", { name: "Select Contact us page" })).toBeVisible();
+    // Contact page is listed
+    await expect(page.locator(".truncate").filter({ hasText: "Contact" }).first()).toBeVisible();
 
+    // Switch to Contact page
+    await page.locator(".truncate").filter({ hasText: "Contact" }).first().click();
+
+    // Rename the Contact page via inline edit
+    await page.getByLabel("Rename Contact").click();
+    await page.getByPlaceholder("Page title").fill("Contact us");
+    await page.getByPlaceholder("page-slug").fill("contact-us");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Page renamed", { exact: true })).toBeVisible();
+
+    // Reload and verify persistence
     await page.reload();
-    await expect(page.getByRole("button", { name: "Select Contact us page" })).toBeVisible();
-    await page.getByRole("button", { name: "Select Home page" }).click();
-    await page.getByRole("button", { name: "Select text component" }).click();
-    await page.getByLabel("Text or label").fill("Updated home component");
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByRole("region", { name: "Notifications (F8)" }).getByText("Website changes saved", { exact: true })).toBeVisible();
+    const businessesRequest2 = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
+    await businessesRequest2;
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible({ timeout: 15000 });
+    await page.getByRole("button", { name: "Pages", exact: true }).click();
+    await expect(page.locator(".truncate").filter({ hasText: "Contact us" }).first()).toBeVisible();
 
-    await page.getByRole("button", { name: "Delete Contact us page" }).click();
-    await expect(page.getByRole("button", { name: "Select Contact us page" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Delete Home page" })).toBeDisabled();
+    // Switch to Home page and edit a component
+    await page.locator(".truncate").filter({ hasText: "Home" }).first().click();
+    await expect(page.getByText("Home component")).toBeVisible();
+    await page.getByText("Home component").click();
+    await page.getByRole("textbox", { name: "Text", exact: true }).fill("Updated home component");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Changes saved", { exact: true })).toBeVisible();
+
+    // Delete Contact us page
+    await page.getByRole("button", { name: "Pages", exact: true }).click();
+    await page.getByLabel("Delete Contact us").click();
+    await expect(page.getByText("Page deleted", { exact: true })).toBeVisible();
+    await expect(page.locator(".truncate").filter({ hasText: "Contact us" })).toHaveCount(0);
   });
 });

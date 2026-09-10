@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 
 const API = process.env.API_URL || "http://localhost:4000/api/v1";
 
-test.describe("Website theme engine", () => {
-  test("loads theme controls, modifies theme, saves, and persists after reload", async ({ page, request }) => {
+test.describe("Website theme engine (current designer)", () => {
+  test("opens Style tab, modifies theme, saves, and persists after reload", async ({ page, request }) => {
     const email = `theme-e2e-${Date.now()}@test.com`;
     const signup = await request.post(`${API}/auth/signup`, {
       data: { email, password: "password123", displayName: "Theme E2E" },
@@ -17,23 +17,25 @@ test.describe("Website theme engine", () => {
     expect(businessResponse.ok()).toBeTruthy();
     const business = (await businessResponse.json()).data;
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByRole("heading", { name: "Website editor" })).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
-    await expect(page.getByText("Theme")).toBeVisible();
-    await expect(page.getByLabel("primary color")).toBeVisible();
+    // Open Style tab
+    await page.getByRole("button", { name: "Style", exact: true }).click();
+    await expect(page.getByText("Make it your style")).toBeVisible();
 
+    // Modify primary color
     await page.getByLabel("primary hex value").fill("#ff0000");
     await page.getByLabel("Save theme").click();
-    await expect(page.getByRole("region", { name: "Notifications (F8)" }).getByText("Theme saved", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Notifications (F8)" }).getByText("Style saved", { exact: true })).toBeVisible();
 
+    // Reload and verify persistence
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Website editor" })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+    await page.getByRole("button", { name: "Style", exact: true }).click();
     await expect(page.getByLabel("primary hex value")).toHaveValue("#ff0000");
   });
 
@@ -70,21 +72,23 @@ test.describe("Website theme engine", () => {
       },
     });
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByRole("heading", { name: "Website editor" })).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
-    await page.getByRole("button", { name: "Select text component" }).click();
-    await expect(page.getByLabel("Text or label")).toHaveValue("Test component");
+    // Select component from canvas
+    await page.getByText("Test component").click();
+    await expect(page.getByRole("textbox", { name: "Text", exact: true })).toHaveValue("Test component");
 
+    // Change theme
+    await page.getByRole("button", { name: "Style", exact: true }).click();
     await page.getByLabel("primary hex value").fill("#00ff00");
     await page.getByLabel("Save theme").click();
-    await expect(page.getByRole("region", { name: "Notifications (F8)" }).getByText("Theme saved", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Notifications (F8)" }).getByText("Style saved", { exact: true })).toBeVisible();
 
-    await expect(page.getByLabel("Text or label")).toHaveValue("Test component");
+    // Component text should be unchanged
+    await expect(page.getByRole("textbox", { name: "Text", exact: true })).toHaveValue("Test component");
   });
 });

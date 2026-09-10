@@ -17,24 +17,20 @@ test.describe("Website Designer UX", () => {
     expect(businessResponse.ok()).toBeTruthy();
     const business = (await businessResponse.json()).data;
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
-
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText("My Website")).toBeVisible();
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
     await expect(page.getByRole("button", { name: "Preview" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Publish website" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Desktop" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Tablet" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Mobile" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Pages" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Style" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pages", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Style", exact: true })).toBeVisible();
   });
 
   test("left panel tabs switch between Add, Pages, and Style", async ({ page, request }) => {
@@ -51,24 +47,21 @@ test.describe("Website Designer UX", () => {
     expect(businessResponse.ok()).toBeTruthy();
     const business = (await businessResponse.json()).data;
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
-
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
     // Add tab is default
-    await expect(page.getByText("Search something to add")).toBeVisible();
+    await expect(page.getByPlaceholder("Search something to add")).toBeVisible();
 
     // Switch to Pages
     await page.getByRole("button", { name: "Pages" }).click();
     await expect(page.getByText("Manage your website pages")).toBeVisible();
 
     // Switch to Style
-    await page.getByRole("button", { name: "Style" }).click();
+    await page.getByRole("button", { name: "Style", exact: true }).click();
     await expect(page.getByText("Make it your style")).toBeVisible();
   });
 
@@ -86,14 +79,11 @@ test.describe("Website Designer UX", () => {
     expect(businessResponse.ok()).toBeTruthy();
     const business = (await businessResponse.json()).data;
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
-
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
     // Desktop is default
     await expect(page.getByRole("button", { name: "Desktop" })).toHaveAttribute("aria-pressed", "true");
@@ -145,14 +135,11 @@ test.describe("Website Designer UX", () => {
     });
     expect(seed.ok()).toBeTruthy();
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
-
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
     // Canvas shows the heading
     await expect(page.getByText("Welcome to Our Restaurant")).toBeVisible();
@@ -194,14 +181,11 @@ test.describe("Website Designer UX", () => {
       },
     });
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
-
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
     // Initially shows empty state
     await expect(page.getByText("Make your website yours")).toBeVisible();
@@ -246,14 +230,11 @@ test.describe("Website Designer UX", () => {
       },
     });
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
-
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
     // Select the text component
     await page.getByText("Original text").click();
@@ -263,7 +244,7 @@ test.describe("Website Designer UX", () => {
     await page.getByLabel("Text").fill("Updated text");
 
     // Canvas updates
-    await expect(page.getByText("Updated text")).toBeVisible();
+    await expect(page.getByRole("paragraph").filter({ hasText: "Updated text" })).toBeVisible();
 
     // Unsaved indicator appears
     await expect(page.getByText("Unsaved changes")).toBeVisible();
@@ -304,14 +285,11 @@ test.describe("Website Designer UX", () => {
       },
     });
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
-
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
     // Select and edit
     await page.getByText("Before save").click();
@@ -319,8 +297,8 @@ test.describe("Website Designer UX", () => {
 
     // Save
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByText("Saved")).toBeVisible();
-    await expect(page.getByText("Changes saved")).toBeVisible();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    await expect(page.getByText("Changes saved", { exact: true })).toBeVisible();
 
     // Reload and verify persistence
     await page.reload();
@@ -360,29 +338,26 @@ test.describe("Website Designer UX", () => {
       },
     });
 
-    await page.addInitScript(({ token, businessId, user }) => {
-      localStorage.setItem("fd_token", token);
-      localStorage.setItem("fd_user", user);
-      localStorage.setItem("fd_business_id", businessId);
-    }, { token: session.token, businessId: business.id, user: JSON.stringify(session.user) });
-
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
     await page.goto("/dashboard/website");
-    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
 
     // Switch to Pages tab
-    await page.getByRole("button", { name: "Pages" }).click();
+    await page.getByRole("button", { name: "Pages", exact: true }).click();
 
     // Home page is listed
-    await expect(page.getByText("Home")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 
     // Create a new page
     await page.getByRole("button", { name: "Add page" }).click();
     await page.getByLabel("Page name").fill("Contact");
     await page.getByLabel("Slug").fill("contact");
     await page.getByRole("button", { name: "Create page" }).click();
-    await expect(page.getByText("Page created")).toBeVisible();
+    await expect(page.getByText("Page created", { exact: true })).toBeVisible();
 
     // Contact page is listed
-    await expect(page.getByText("Contact")).toBeVisible();
+    await expect(page.getByText("Contact", { exact: true })).toBeVisible();
   });
 });
