@@ -36,7 +36,9 @@ async function seedTemplate() {
       thumbnail: "/thumbnails/test.png",
       isBuiltIn: true,
       themeConfig: '{"colors":{"primary":"#ff0000"}}',
-      status: "active",
+      status: "published",
+      visibility: "public",
+      ownerType: "system",
       version: 1,
       pages: {
         create: [
@@ -85,6 +87,9 @@ async function seedSectionPack() {
       description: "A test section pack",
       category: "general",
       isBuiltIn: true,
+      status: "published",
+      visibility: "public",
+      ownerType: "system",
       sections: {
         create: [
           {

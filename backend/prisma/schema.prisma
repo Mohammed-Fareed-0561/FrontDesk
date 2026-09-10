@@ -29,8 +29,25 @@ model User {
   businessesCreated Business[] @relation("BusinessCreator")
   auditLogs        AuditLog[]
   notificationPreferences NotificationPreference[]
+  creatorProfile   CreatorProfile?
 
   @@map("users")
+}
+
+model CreatorProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  displayName String   @map("display_name")
+  slug        String   @unique
+  bio         String?
+  avatarUrl   String?  @map("avatar_url")
+  status      String   @default("active") // active|suspended
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("creator_profiles")
 }
 
 model Workspace {
@@ -443,8 +460,11 @@ model WebsiteTemplate {
   category    String   @default("general") // restaurant|salon|clinic|agency|portfolio|retail|freelancer|real-estate|education|general
   thumbnail   String?  // URL or media reference
   version     Int      @default(1)
-  status      String   @default("active") // active|archived
+  status      String   @default("draft") // draft|published|archived
+  visibility  String   @default("private") // private|public
   isBuiltIn   Boolean  @default(false) @map("is_built_in")
+  ownerType   String   @default("system") @map("owner_type") // system|creator
+  ownerId     String?  @map("owner_id") // userId of creator (null for system assets)
   themeConfig String?  @map("theme_config") // JSON
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -514,7 +534,12 @@ model SectionPack {
   slug        String   @unique
   description String?
   category    String   @default("general")
+  status      String   @default("draft") // draft|published|archived
+  visibility  String   @default("private") // private|public
+  version     Int      @default(1)
   isBuiltIn   Boolean  @default(false) @map("is_built_in")
+  ownerType   String   @default("system") @map("owner_type") // system|creator
+  ownerId     String?  @map("owner_id") // userId of creator (null for system assets)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

@@ -67,6 +67,7 @@ export async function cleanupDb() {
   await t.workspaceMember.deleteMany();
   await t.invitation.deleteMany();
   await t.workspace.deleteMany();
+  await (t as any).creatorProfile?.deleteMany?.();
   await t.user.deleteMany();
 }
 

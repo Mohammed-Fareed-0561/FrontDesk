@@ -254,6 +254,9 @@ async function main() {
         description: tpl.description,
         category: tpl.category,
         isBuiltIn: true,
+        ownerType: "system",
+        visibility: "public",
+        status: "published",
         themeConfig: tpl.themeConfig ? JSON.stringify(tpl.themeConfig) : undefined,
         pages: {
           create: tpl.pages.map((p: any) => ({
@@ -323,6 +326,9 @@ async function main() {
         description: pack.description,
         category: pack.category,
         isBuiltIn: true,
+        ownerType: "system",
+        visibility: "public",
+        status: "published",
         sections: {
           create: pack.sections.map((s: any) => ({
             sectionType: s.sectionType,

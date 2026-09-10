@@ -29,6 +29,18 @@ export type User = {
   createdAt: string;
 };
 
+export type CreatorProfile = {
+  id: string;
+  userId: string;
+  displayName: string;
+  slug: string;
+  bio: string | null;
+  avatarUrl: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Business = {
   id: string;
   workspaceId: string;
@@ -289,9 +301,13 @@ export type WebsiteTemplate = {
   thumbnail: string | null;
   isBuiltIn: boolean;
   status: string;
+  visibility: string;
+  ownerType: string;
+  ownerId: string | null;
   version: number;
   themeConfig: string | null;
   createdAt: string;
+  updatedAt: string;
   pageCount?: number;
   pages?: WebsiteTemplatePage[];
 };
@@ -342,7 +358,13 @@ export type SectionPack = {
   description: string | null;
   category: string;
   isBuiltIn: boolean;
+  status: string;
+  visibility: string;
+  ownerType: string;
+  ownerId: string | null;
+  version: number;
   createdAt: string;
+  updatedAt: string;
   sectionCount?: number;
   sections?: SectionPackSection[];
 };

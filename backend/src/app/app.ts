@@ -12,6 +12,7 @@ import { catalogRoutes } from "../modules/catalog/catalog.routes.js";
 import { importerRoutes } from "../modules/importer/importer.routes.js";
 import { websitesRoutes } from "../modules/websites/websites.routes.js";
 import { templateRoutes, sectionPackRoutes } from "../modules/websites/templates.routes.js";
+import { creatorRoutes } from "../modules/websites/creator.routes.js";
 import { enquiriesRoutes } from "../modules/enquiries/enquiries.routes.js";
 import { customersRoutes } from "../modules/customers/customers.routes.js";
 import { memoryRoutes } from "../modules/memory/memory.routes.js";
@@ -82,6 +83,7 @@ export async function buildApp() {
   await app.register(websitesRoutes);
   await app.register(templateRoutes);
   await app.register(sectionPackRoutes);
+  await app.register(creatorRoutes);
   await app.register(enquiriesRoutes);
   await app.register(customersRoutes);
   await app.register(memoryRoutes);

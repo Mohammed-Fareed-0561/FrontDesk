@@ -37,7 +37,7 @@ const packInclude: any = {
 export async function templateRoutes(app: FastifyInstance) {
   app.get("/api/v1/templates", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
     const templates = await prisma.websiteTemplate.findMany({
-      where: { status: "active" },
+      where: { status: "published", visibility: "public" },
       orderBy: [{ category: "asc" }, { name: "asc" }],
       select: {
         id: true,
@@ -56,12 +56,16 @@ export async function templateRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/v1/templates/:templateId", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
     const { templateId } = req.params as any;
     const template = await prisma.websiteTemplate.findUnique({
       where: { id: templateId },
       include: templateInclude,
     }) as any;
     if (!template) throw Errors.notFound("WebsiteTemplate");
+    if (template.visibility === "private" && template.ownerId !== userId) {
+      throw Errors.forbidden();
+    }
     return reply.send({ success: true, data: template });
   });
 
@@ -79,6 +83,12 @@ export async function templateRoutes(app: FastifyInstance) {
       include: templateInclude,
     }) as any;
     if (!template) throw Errors.notFound("WebsiteTemplate");
+    if (template.visibility === "private" && template.ownerId !== userId) {
+      throw Errors.forbidden();
+    }
+    if (template.status !== "published") {
+      throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Template must be published to import" });
+    }
 
     const business = await prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw Errors.notFound("Business");
@@ -182,6 +192,7 @@ export async function templateRoutes(app: FastifyInstance) {
 export async function sectionPackRoutes(app: FastifyInstance) {
   app.get("/api/v1/section-packs", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
     const packs = await prisma.sectionPack.findMany({
+      where: { status: "published", visibility: "public" },
       orderBy: [{ category: "asc" }, { name: "asc" }],
       select: {
         id: true,
@@ -199,12 +210,16 @@ export async function sectionPackRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/v1/section-packs/:packId", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
     const { packId } = req.params as any;
     const pack = await prisma.sectionPack.findUnique({
       where: { id: packId },
       include: packInclude,
     }) as any;
     if (!pack) throw Errors.notFound("SectionPack");
+    if (pack.visibility === "private" && pack.ownerId !== userId) {
+      throw Errors.forbidden();
+    }
     return reply.send({ success: true, data: pack });
   });
 
@@ -223,6 +238,12 @@ export async function sectionPackRoutes(app: FastifyInstance) {
       include: packInclude,
     }) as any;
     if (!pack) throw Errors.notFound("SectionPack");
+    if (pack.visibility === "private" && pack.ownerId !== userId) {
+      throw Errors.forbidden();
+    }
+    if (pack.status !== "published") {
+      throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Section pack must be published to import" });
+    }
 
     const page = await prisma.websitePage.findFirst({ where: { id: pageId } });
     if (!page) throw Errors.notFound("WebsitePage");
