@@ -434,6 +434,132 @@ model WebsiteDomain {
   @@map("website_domains")
 }
 
+// Website Templates
+model WebsiteTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  category    String   @default("general") // restaurant|salon|clinic|agency|portfolio|retail|freelancer|real-estate|education|general
+  thumbnail   String?  // URL or media reference
+  version     Int      @default(1)
+  status      String   @default("active") // active|archived
+  isBuiltIn   Boolean  @default(false) @map("is_built_in")
+  themeConfig String?  @map("theme_config") // JSON
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  pages    WebsiteTemplatePage[]
+  sections SectionPack[]
+
+  @@map("website_templates")
+}
+
+model WebsiteTemplatePage {
+  id         String   @id @default(uuid())
+  templateId String   @map("template_id")
+  title      String
+  slug       String
+  pageType   String?  @map("page_type")
+  sortOrder  Int      @default(0) @map("sort_order")
+  seoConfig  String?  @map("seo_config") // JSON
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  template WebsiteTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  sections WebsiteTemplateSection[]
+
+  @@unique([templateId, slug])
+  @@map("website_template_pages")
+}
+
+model WebsiteTemplateSection {
+  id               String   @id @default(uuid())
+  templatePageId   String   @map("template_page_id")
+  sectionType      String   @map("section_type")
+  sortOrder        Int      @default(0) @map("sort_order")
+  content          String   // JSON
+  styleConfig      String?  @map("style_config") // JSON
+  visibilityConfig String?  @map("visibility_config") // JSON
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  page       WebsiteTemplatePage      @relation(fields: [templatePageId], references: [id], onDelete: Cascade)
+  components WebsiteTemplateComponent[]
+
+  @@map("website_template_sections")
+}
+
+model WebsiteTemplateComponent {
+  id              String   @id @default(uuid())
+  templateSectionId String @map("template_section_id")
+  componentType   String   @map("component_type")
+  sortOrder       Int      @default(0) @map("sort_order")
+  props           String   // JSON
+  content         String?  // JSON
+  styleConfig     String?  @map("style_config") // JSON
+  assetRefs       String?  @map("asset_refs") // JSON
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  section WebsiteTemplateSection @relation(fields: [templateSectionId], references: [id], onDelete: Cascade)
+
+  @@map("website_template_components")
+}
+
+// Section Packs
+model SectionPack {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  category    String   @default("general")
+  isBuiltIn   Boolean  @default(false) @map("is_built_in")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  templateId String? @map("template_id")
+  template   WebsiteTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  sections SectionPackSection[]
+
+  @@map("section_packs")
+}
+
+model SectionPackSection {
+  id             String   @id @default(uuid())
+  packId         String   @map("pack_id")
+  sectionType    String   @map("section_type")
+  sortOrder      Int      @default(0) @map("sort_order")
+  content        String   // JSON
+  styleConfig    String?  @map("style_config") // JSON
+  visibilityConfig String? @map("visibility_config") // JSON
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  pack       SectionPack              @relation(fields: [packId], references: [id], onDelete: Cascade)
+  components SectionPackComponent[]
+
+  @@map("section_pack_sections")
+}
+
+model SectionPackComponent {
+  id            String   @id @default(uuid())
+  packSectionId String   @map("pack_section_id")
+  componentType String   @map("component_type")
+  sortOrder     Int      @default(0) @map("sort_order")
+  props         String   // JSON
+  content       String?  // JSON
+  styleConfig   String?  @map("style_config") // JSON
+  assetRefs     String?  @map("asset_refs") // JSON
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  section SectionPackSection @relation(fields: [packSectionId], references: [id], onDelete: Cascade)
+
+  @@map("section_pack_components")
+}
+
 // Media
 model MediaAsset {
   id         String   @id @default(uuid())

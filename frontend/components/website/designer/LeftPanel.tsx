@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,12 +18,16 @@ import {
   ChevronRight,
   Pencil,
   Trash2,
+  Download,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
-import type { WebsitePage, WebsiteSection, WebsiteComponent } from "@/types";
+import type { WebsitePage, WebsiteSection, WebsiteComponent, WebsiteTemplate, SectionPack } from "@/types";
 import type { DesignerLeftTab, ComponentPreset, SectionPreset } from "@/lib/designer/types";
 import { ordered, slugify } from "@/lib/designer/utils";
 import { ThemeEditor } from "@/components/website/ThemeEditor";
 import type { WebsiteTheme } from "@/providers/ThemeProvider";
+import { apiClient } from "@/lib/api/client";
 
 interface LeftPanelProps {
   pages: WebsitePage[];
@@ -54,6 +58,8 @@ interface LeftPanelProps {
   onAddComponent: (sectionId: string, component: Omit<WebsiteComponent, "id" | "createdAt" | "updatedAt" | "sectionId">) => void;
   themeConfig: string | null;
   onSaveTheme: (theme: WebsiteTheme) => Promise<void>;
+  businessId: string;
+  onTemplateImported?: () => void;
 }
 
 const COMPONENT_PRESETS: ComponentPreset[] = [
@@ -281,6 +287,8 @@ export function LeftPanel({
   onAddComponent,
   themeConfig,
   onSaveTheme,
+  businessId,
+  onTemplateImported,
 }: LeftPanelProps) {
   const [activeTab, setActiveTab] = useState<DesignerLeftTab>("add");
   const [showNewPage, setShowNewPage] = useState(false);
@@ -295,6 +303,7 @@ export function LeftPanel({
     { id: "add", label: "Add", icon: Plus },
     { id: "sections", label: "Sections", icon: LayoutTemplate },
     { id: "elements", label: "Elements", icon: Type },
+    { id: "templates", label: "Templates", icon: Sparkles },
     { id: "pages", label: "Pages", icon: FileText },
     { id: "style", label: "Style", icon: Palette },
   ];
@@ -379,6 +388,12 @@ export function LeftPanel({
             presets={COMPONENT_PRESETS}
             firstSectionId={sections[0]?.id}
             onAddComponent={onAddComponent}
+          />
+        )}
+        {activeTab === "templates" && (
+          <TemplatesTab
+            businessId={businessId}
+            onTemplateImported={onTemplateImported}
           />
         )}
         {activeTab === "pages" && (
@@ -804,6 +819,240 @@ function StyleTab({
         <p className="text-xs text-muted-foreground mt-0.5">Make it your style</p>
       </div>
       <ThemeEditor themeConfig={themeConfig} onSave={onSaveTheme} />
+    </div>
+  );
+}
+
+/* ── Templates Tab ─────────────────────────────────────────── */
+
+function TemplatesTab({
+  businessId,
+  onTemplateImported,
+}: {
+  businessId: string;
+  onTemplateImported?: () => void;
+}) {
+  const [templates, setTemplates] = useState<WebsiteTemplate[]>([]);
+  const [packs, setPacks] = useState<SectionPack[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [activeSection, setActiveSection] = useState<"templates" | "packs">("templates");
+
+  const fetchTemplates = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [tpls, packList] = await Promise.all([
+        apiClient<WebsiteTemplate[]>("/templates"),
+        apiClient<SectionPack[]>("/section-packs"),
+      ]);
+      setTemplates(tpls || []);
+      setPacks(packList || []);
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
+
+  const handlePreview = async (templateId: string) => {
+    if (previewId === templateId) {
+      setPreviewId(null);
+      setPreviewData(null);
+      return;
+    }
+    setPreviewId(templateId);
+    setPreviewLoading(true);
+    try {
+      const data = await apiClient<any>(`/templates/${templateId}`);
+      setPreviewData(data);
+    } catch {
+      // silently fail
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleImport = async (templateId: string) => {
+    setImporting(templateId);
+    try {
+      await apiClient(`/templates/${templateId}/import`, {
+        method: "POST",
+        body: { businessId },
+      });
+      onTemplateImported?.();
+      setPreviewId(null);
+      setPreviewData(null);
+    } catch {
+      // silently fail
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const categories = Array.from(new Set(templates.map((t) => t.category)));
+  const packCategories = Array.from(new Set(packs.map((p) => p.category)));
+
+  if (loading) {
+    return (
+      <div className="p-3 flex items-center justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">Templates</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">Choose a template or section pack</p>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex gap-1 rounded-lg bg-muted p-0.5">
+        <button
+          type="button"
+          onClick={() => setActiveSection("templates")}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            activeSection === "templates" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Templates
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection("packs")}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            activeSection === "packs" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Section Packs
+        </button>
+      </div>
+
+      {activeSection === "templates" && (
+        <>
+          {previewId && (
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium">Preview</p>
+                <button
+                  type="button"
+                  onClick={() => { setPreviewId(null); setPreviewData(null); }}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Close
+                </button>
+              </div>
+              {previewLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : previewData ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{previewData.name}</p>
+                  <p className="text-xs text-muted-foreground">{previewData.description}</p>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    {previewData.pages?.map((p: any) => (
+                      <div key={p.id} className="flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        <span>{p.title}</span>
+                        <span className="text-muted-foreground">({p.sections?.length || 0} sections)</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs w-full"
+                    onClick={() => handleImport(previewId)}
+                    disabled={importing === previewId}
+                  >
+                    {importing === previewId ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <Download className="h-3 w-3 mr-1" />
+                    )}
+                    Use This Template
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {categories.map((category) => (
+            <div key={category} className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{category}</p>
+              {templates
+                .filter((t) => t.category === category)
+                .map((template) => (
+                  <div key={template.id} className="rounded-lg border p-2.5 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted">
+                        <LayoutTemplate className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{template.name}</p>
+                        <p className="text-xs text-muted-foreground">{template.pageCount || 0} pages</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-xs flex-1"
+                        onClick={() => handlePreview(template.id)}
+                      >
+                        Preview
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-6 text-xs flex-1"
+                        onClick={() => handleImport(template.id)}
+                        disabled={importing === template.id}
+                      >
+                        {importing === template.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          "Use"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ))}
+        </>
+      )}
+
+      {activeSection === "packs" && (
+        <>
+          {packCategories.map((category) => (
+            <div key={category} className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{category}</p>
+              {packs
+                .filter((p) => p.category === category)
+                .map((pack) => (
+                  <div key={pack.id} className="rounded-lg border p-2.5 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted">
+                        <LayoutTemplate className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{pack.name}</p>
+                        <p className="text-xs text-muted-foreground">{pack.sectionCount || 0} sections</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{pack.description}</p>
+                  </div>
+                ))}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }

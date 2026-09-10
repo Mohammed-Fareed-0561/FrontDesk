@@ -522,6 +522,8 @@ export default function WebsiteDesignerPage() {
           onAddComponent={addComponent}
           themeConfig={website.themeConfig}
           onSaveTheme={saveTheme}
+          businessId={selectedId}
+          onTemplateImported={loadWebsite}
         />
 
         {/* Center Canvas */}

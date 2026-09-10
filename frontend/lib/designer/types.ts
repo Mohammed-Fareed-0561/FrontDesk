@@ -1,6 +1,6 @@
 import type { Website, WebsiteComponent, WebsitePage, WebsiteSection } from "@/types";
 
-export type DesignerLeftTab = "add" | "sections" | "elements" | "uploads" | "pages" | "style";
+export type DesignerLeftTab = "add" | "sections" | "elements" | "templates" | "uploads" | "pages" | "style";
 
 export type DeviceMode = "desktop" | "tablet" | "mobile";
 

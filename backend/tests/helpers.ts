@@ -47,6 +47,13 @@ export async function cleanupDb() {
   await t.websiteVersion.deleteMany();
   await t.websiteDomain.deleteMany();
   await t.website.deleteMany();
+  await (t as any).sectionPackComponent?.deleteMany?.();
+  await (t as any).sectionPackSection?.deleteMany?.();
+  await (t as any).sectionPack?.deleteMany?.();
+  await (t as any).websiteTemplateComponent?.deleteMany?.();
+  await (t as any).websiteTemplateSection?.deleteMany?.();
+  await (t as any).websiteTemplatePage?.deleteMany?.();
+  await (t as any).websiteTemplate?.deleteMany?.();
   await t.productImage.deleteMany();
   await t.productVariant.deleteMany();
   await t.product.deleteMany();

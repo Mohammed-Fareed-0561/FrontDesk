@@ -280,6 +280,99 @@ export type WebsiteVersion = {
   publishedAt: string | null;
 };
 
+export type WebsiteTemplate = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  category: string;
+  thumbnail: string | null;
+  isBuiltIn: boolean;
+  status: string;
+  version: number;
+  themeConfig: string | null;
+  createdAt: string;
+  pageCount?: number;
+  pages?: WebsiteTemplatePage[];
+};
+
+export type WebsiteTemplatePage = {
+  id: string;
+  templateId: string;
+  title: string;
+  slug: string;
+  pageType: string | null;
+  sortOrder: number;
+  seoConfig: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sections?: WebsiteTemplateSection[];
+};
+
+export type WebsiteTemplateSection = {
+  id: string;
+  pageId: string;
+  sectionType: string;
+  sortOrder: number;
+  content: string;
+  styleConfig: string | null;
+  visibilityConfig: string | null;
+  createdAt: string;
+  updatedAt: string;
+  components?: WebsiteTemplateComponent[];
+};
+
+export type WebsiteTemplateComponent = {
+  id: string;
+  sectionId: string;
+  componentType: string;
+  sortOrder: number;
+  props: string;
+  content: string | null;
+  styleConfig: string | null;
+  assetRefs: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SectionPack = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  category: string;
+  isBuiltIn: boolean;
+  createdAt: string;
+  sectionCount?: number;
+  sections?: SectionPackSection[];
+};
+
+export type SectionPackSection = {
+  id: string;
+  packId: string;
+  sectionType: string;
+  sortOrder: number;
+  content: string;
+  styleConfig: string | null;
+  visibilityConfig: string | null;
+  createdAt: string;
+  updatedAt: string;
+  components?: SectionPackComponent[];
+};
+
+export type SectionPackComponent = {
+  id: string;
+  sectionId: string;
+  componentType: string;
+  sortOrder: number;
+  props: string;
+  content: string | null;
+  styleConfig: string | null;
+  assetRefs: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type BusinessMemory = {
   id: string;
   businessId: string;
