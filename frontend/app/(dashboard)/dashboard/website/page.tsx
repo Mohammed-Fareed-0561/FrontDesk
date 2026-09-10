@@ -229,6 +229,122 @@ export default function WebsiteDesignerPage() {
     toast({ title: "Element added" });
   };
 
+  // ── Section operations ─────────────────────────────────────
+  const addSection = (section: {
+    sectionType: string;
+    sortOrder: number;
+    content: string;
+    styleConfig?: string;
+    visibilityConfig?: string | null;
+    components?: Array<{
+      componentType: string;
+      sortOrder: number;
+      props: string;
+      content: string;
+      styleConfig?: string;
+      assetRefs?: string | null;
+      sourceType?: string | null;
+      sourceId?: string | null;
+      sourceVersion?: string | null;
+    }>;
+  }) => {
+    if (!website || !currentPage) return;
+    const newId = `temp-section-${Date.now()}`;
+    const newSection: WebsiteSection = {
+      ...section,
+      id: newId,
+      pageId: currentPage.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      styleConfig: section.styleConfig || null,
+      visibilityConfig: section.visibilityConfig || null,
+      components: (section.components || []).map((c: any, i: number) => ({
+        ...c,
+        id: `temp-comp-${Date.now()}-${i}`,
+        sectionId: newId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })),
+    };
+    const currentSections = ordered(currentPage.sections || []);
+    newSection.sortOrder = currentSections.length;
+    newSection.components = (newSection.components || []).map((c: any, i: number) => ({ ...c, sortOrder: i }));
+
+    setWebsite({
+      ...website,
+      pages: website.pages?.map((p) =>
+        p.id !== currentPageId
+          ? p
+          : { ...p, sections: [...(p.sections || []), newSection] }
+      ),
+    });
+    markDirty();
+    toast({ title: "Section added" });
+  };
+
+  const moveSection = (id: string, direction: -1 | 1) => {
+    if (!website || !currentPage) return;
+    const items = ordered(currentPage.sections || []);
+    const index = items.findIndex((s) => s.id === id);
+    const next = index + direction;
+    if (index < 0 || next < 0 || next >= items.length) return;
+    [items[index], items[next]] = [items[next], items[index]];
+    const reordered = items.map((s, i) => ({ ...s, sortOrder: i }));
+
+    setWebsite({
+      ...website,
+      pages: website.pages?.map((p) =>
+        p.id !== currentPageId ? p : { ...p, sections: reordered }
+      ),
+    });
+    markDirty();
+  };
+
+  const duplicateSection = (id: string) => {
+    if (!website || !currentPage) return;
+    const original = currentPage.sections?.find((s) => s.id === id);
+    if (!original) return;
+    const newId = `temp-section-${Date.now()}`;
+    const newSection: WebsiteSection = {
+      ...original,
+      id: newId,
+      sortOrder: (currentPage.sections?.length || 0),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      components: (original.components || []).map((c, i) => ({
+        ...c,
+        id: `temp-comp-${Date.now()}-${i}`,
+        sectionId: newId,
+        sortOrder: i,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })),
+    };
+
+    setWebsite({
+      ...website,
+      pages: website.pages?.map((p) =>
+        p.id !== currentPageId
+          ? p
+          : { ...p, sections: [...(p.sections || []), newSection] }
+      ),
+    });
+    markDirty();
+    toast({ title: "Section duplicated" });
+  };
+
+  const deleteSection = async (id: string) => {
+    if (!selectedId || !website || !currentPage) return;
+    try {
+      await apiClient(`/businesses/${selectedId}/website/sections/${id}`, { method: "DELETE" });
+      setSelection({ type: null, id: null });
+      await loadWebsite();
+      toast({ title: "Section deleted" });
+    } catch (error: any) {
+      toast({ title: "Could not delete section", description: error.message });
+    }
+  };
+
   // ── Page operations ───────────────────────────────────────────
   const createPage = async (title: string, pageSlug: string) => {
     if (!selectedId || !website) return;
@@ -402,6 +518,7 @@ export default function WebsiteDesignerPage() {
           onCreatePage={createPage}
           onRenamePage={renamePage}
           onDeletePage={deletePage}
+          onAddSection={addSection}
           onAddComponent={addComponent}
           themeConfig={website.themeConfig}
           onSaveTheme={saveTheme}
@@ -427,6 +544,22 @@ export default function WebsiteDesignerPage() {
             onDeleteComponent={deleteComponent}
             onMoveComponent={moveComponent}
             onDuplicateComponent={duplicateComponent}
+            onUpdateSection={(id, changes) => {
+              if (!website) return;
+              setWebsite({
+                ...website,
+                pages: website.pages?.map((page) => ({
+                  ...page,
+                  sections: page.sections?.map((s) =>
+                    s.id === id ? { ...s, ...changes } : s
+                  ),
+                })),
+              });
+              markDirty();
+            }}
+            onMoveSection={moveSection}
+            onDuplicateSection={duplicateSection}
+            onDeleteSection={deleteSection}
           />
         </div>
       </div>

@@ -33,6 +33,24 @@ interface LeftPanelProps {
   onCreatePage: (title: string, slug: string) => Promise<void>;
   onRenamePage: (id: string, title: string, slug: string) => Promise<void>;
   onDeletePage: (id: string) => Promise<void>;
+  onAddSection: (section: {
+    sectionType: string;
+    sortOrder: number;
+    content: string;
+    styleConfig?: string;
+    visibilityConfig?: string | null;
+    components?: Array<{
+      componentType: string;
+      sortOrder: number;
+      props: string;
+      content: string;
+      styleConfig?: string;
+      assetRefs?: string | null;
+      sourceType?: string | null;
+      sourceId?: string | null;
+      sourceVersion?: string | null;
+    }>;
+  }) => void;
   onAddComponent: (sectionId: string, component: Omit<WebsiteComponent, "id" | "createdAt" | "updatedAt" | "sectionId">) => void;
   themeConfig: string | null;
   onSaveTheme: (theme: WebsiteTheme) => Promise<void>;
@@ -136,6 +154,18 @@ const SECTION_PRESETS: SectionPreset[] = [
     ],
   },
   {
+    sectionType: "features",
+    label: "Features",
+    description: "Highlight key features",
+    category: "Features",
+    defaultContent: { heading: "Why Choose Us" },
+    defaultComponents: [
+      { componentType: "text", sortOrder: 0, content: { text: "Quality Service" }, props: {} },
+      { componentType: "text", sortOrder: 1, content: { text: "Fast Delivery" }, props: {} },
+      { componentType: "text", sortOrder: 2, content: { text: "Best Value" }, props: {} },
+    ],
+  },
+  {
     sectionType: "services",
     label: "Services",
     description: "Showcase your services",
@@ -143,6 +173,16 @@ const SECTION_PRESETS: SectionPreset[] = [
     defaultContent: { heading: "Our Services" },
     defaultComponents: [
       { componentType: "services", sortOrder: 0, content: { heading: "Our Services", items: [] }, props: {} },
+    ],
+  },
+  {
+    sectionType: "products",
+    label: "Products",
+    description: "Display your products",
+    category: "Products",
+    defaultContent: { heading: "Our Products" },
+    defaultComponents: [
+      { componentType: "products", sortOrder: 0, content: { heading: "Our Products", items: [] }, props: {} },
     ],
   },
   {
@@ -196,6 +236,37 @@ const SECTION_PRESETS: SectionPreset[] = [
       { componentType: "text", sortOrder: 0, content: { text: "Frequently Asked Questions" }, props: {} },
     ],
   },
+  {
+    sectionType: "image-text",
+    label: "Image + Text",
+    description: "Image with text side by side",
+    category: "Media",
+    defaultContent: { heading: "Image Section" },
+    defaultComponents: [
+      { componentType: "image", sortOrder: 0, content: { src: "", alt: "Section image" }, props: {} },
+      { componentType: "text", sortOrder: 1, content: { text: "Add your description here." }, props: {} },
+    ],
+  },
+  {
+    sectionType: "text-block",
+    label: "Text Block",
+    description: "Simple text content",
+    category: "Content",
+    defaultContent: { heading: "Text Content" },
+    defaultComponents: [
+      { componentType: "text", sortOrder: 0, content: { text: "Add your content here." }, props: {} },
+    ],
+  },
+  {
+    sectionType: "footer",
+    label: "Footer",
+    description: "Page footer with links",
+    category: "Footer",
+    defaultContent: { heading: "Footer" },
+    defaultComponents: [
+      { componentType: "text", sortOrder: 0, content: { text: "© 2024 Your Business. All rights reserved." }, props: {} },
+    ],
+  },
 ];
 
 export function LeftPanel({
@@ -206,6 +277,7 @@ export function LeftPanel({
   onCreatePage,
   onRenamePage,
   onDeletePage,
+  onAddSection,
   onAddComponent,
   themeConfig,
   onSaveTheme,
@@ -299,8 +371,7 @@ export function LeftPanel({
         {activeTab === "sections" && (
           <SectionsTab
             presets={SECTION_PRESETS}
-            firstSectionId={sections[0]?.id}
-            onAddComponent={onAddComponent}
+            onAddSection={onAddSection}
           />
         )}
         {activeTab === "elements" && (
@@ -411,12 +482,27 @@ function AddTab({
 
 function SectionsTab({
   presets,
-  firstSectionId,
-  onAddComponent,
+  onAddSection,
 }: {
   presets: SectionPreset[];
-  firstSectionId?: string;
-  onAddComponent: (sectionId: string, component: Omit<WebsiteComponent, "id" | "createdAt" | "updatedAt" | "sectionId">) => void;
+  onAddSection: (section: {
+    sectionType: string;
+    sortOrder: number;
+    content: string;
+    styleConfig?: string;
+    visibilityConfig?: string | null;
+    components?: Array<{
+      componentType: string;
+      sortOrder: number;
+      props: string;
+      content: string;
+      styleConfig?: string;
+      assetRefs?: string | null;
+      sourceType?: string | null;
+      sourceId?: string | null;
+      sourceVersion?: string | null;
+    }>;
+  }) => void;
 }) {
   const categories = Array.from(new Set(presets.map((p) => p.category)));
 
@@ -435,8 +521,25 @@ function SectionsTab({
               <button
                 key={preset.sectionType}
                 type="button"
-                disabled={!firstSectionId}
-                className="flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
+                onClick={() => onAddSection({
+                  sectionType: preset.sectionType,
+                  sortOrder: 0,
+                  content: JSON.stringify(preset.defaultContent),
+                  styleConfig: "{}",
+                  visibilityConfig: null,
+                  components: preset.defaultComponents.map((c, i) => ({
+                    componentType: c.componentType,
+                    sortOrder: i,
+                    props: JSON.stringify(c.props),
+                    content: JSON.stringify(c.content),
+                    styleConfig: "{}",
+                    assetRefs: null,
+                    sourceType: null,
+                    sourceId: null,
+                    sourceVersion: null,
+                  })),
+                })}
+                className="flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition-colors hover:bg-muted/50"
               >
                 <div className="flex h-12 w-16 items-center justify-center rounded bg-muted">
                   <LayoutTemplate className="h-5 w-5 text-muted-foreground" />
@@ -464,11 +567,26 @@ function ElementsTab({
   firstSectionId?: string;
   onAddComponent: (sectionId: string, component: Omit<WebsiteComponent, "id" | "createdAt" | "updatedAt" | "sectionId">) => void;
 }) {
+  const handleAdd = (preset: ComponentPreset) => {
+    if (!firstSectionId) return;
+    onAddComponent(firstSectionId, {
+      componentType: preset.componentType,
+      sortOrder: 0,
+      props: JSON.stringify(preset.defaultProps),
+      content: JSON.stringify(preset.defaultContent),
+      styleConfig: "{}",
+      assetRefs: null,
+      sourceType: null,
+      sourceId: null,
+      sourceVersion: null,
+    });
+  };
+
   const categories: Array<{ label: string; items: ComponentPreset[] }> = [
-    { label: "Text", items: presets.filter((p) => ["heading", "paragraph"].includes(p.kind)) },
+    { label: "Text", items: presets.filter((p) => ["heading"].includes(p.kind)) },
     { label: "Media", items: presets.filter((p) => ["image", "gallery"].includes(p.kind)) },
     { label: "Action", items: presets.filter((p) => ["button", "form"].includes(p.kind)) },
-    { label: "Business", items: presets.filter((p) => ["services", "products", "booking", "testimonials", "contact"].includes(p.kind)) },
+    { label: "Business", items: presets.filter((p) => ["services", "products", "booking"].includes(p.kind)) },
   ];
 
   return (
@@ -485,6 +603,7 @@ function ElementsTab({
               <button
                 key={preset.kind}
                 type="button"
+                onClick={() => handleAdd(preset)}
                 disabled={!firstSectionId}
                 className="flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-colors hover:bg-muted/50 disabled:opacity-50"
               >

@@ -33,6 +33,10 @@ interface RightPanelProps {
   onDeleteComponent: (id: string) => void;
   onMoveComponent: (id: string, direction: -1 | 1) => void;
   onDuplicateComponent: (id: string) => void;
+  onUpdateSection: (id: string, changes: Partial<WebsiteSection>) => void;
+  onMoveSection: (id: string, direction: -1 | 1) => void;
+  onDuplicateSection: (id: string) => void;
+  onDeleteSection: (id: string) => void;
 }
 
 export function RightPanel({
@@ -43,6 +47,10 @@ export function RightPanel({
   onDeleteComponent,
   onMoveComponent,
   onDuplicateComponent,
+  onUpdateSection,
+  onMoveSection,
+  onDuplicateSection,
+  onDeleteSection,
 }: RightPanelProps) {
   if (selection.type === "component" && component) {
     return (
@@ -57,7 +65,15 @@ export function RightPanel({
   }
 
   if (selection.type === "section" && section) {
-    return <SectionEditor section={section} />;
+    return (
+      <SectionEditor
+        section={section}
+        onUpdate={(changes) => onUpdateSection(section.id, changes)}
+        onMove={(dir) => onMoveSection(section.id, dir)}
+        onDuplicate={() => onDuplicateSection(section.id)}
+        onDelete={() => onDeleteSection(section.id)}
+      />
+    );
   }
 
   return <EmptyState />;
@@ -343,39 +359,155 @@ function ComponentEditor({
 
 /* ── Section Editor ──────────────────────────────────────────── */
 
-function SectionEditor({ section }: { section: WebsiteSection }) {
+function SectionEditor({
+  section,
+  onUpdate,
+  onMove,
+  onDuplicate,
+  onDelete,
+}: {
+  section: WebsiteSection;
+  onUpdate: (changes: Partial<WebsiteSection>) => void;
+  onMove: (dir: -1 | 1) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const content = parseObject(section.content);
+  const style = parseObject(section.styleConfig);
+
+  const updateContent = (key: string, value: any) => {
+    onUpdate({ content: JSON.stringify({ ...content, [key]: value }) });
+  };
+
+  const updateStyle = (key: string, value: any) => {
+    onUpdate({ styleConfig: JSON.stringify({ ...style, [key]: value }) });
+  };
+
   return (
     <div className="flex h-full flex-col">
+      {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <LayoutTemplate className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Edit Section</h3>
         </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onMove(-1)}
+            className="rounded p-1.5 hover:bg-muted"
+            aria-label="Move section up"
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMove(1)}
+            className="rounded p-1.5 hover:bg-muted"
+            aria-label="Move section down"
+          >
+            <ArrowDown className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onDuplicate}
+            className="rounded p-1.5 hover:bg-muted"
+            aria-label="Duplicate section"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
+
+      {/* Content */}
       <div className="flex-1 overflow-auto p-4">
         <div className="space-y-4">
           <div className="space-y-2">
             <Label className="text-xs">Section type</Label>
             <Input value={section.sectionType} disabled className="h-8 text-xs" />
           </div>
-          <div className="space-y-2">
-            <Label className="text-xs">Sort order</Label>
-            <Input value={String(section.sortOrder)} disabled className="h-8 text-xs" />
-          </div>
+
+          {content.heading !== undefined && (
+            <div className="space-y-2">
+              <Label htmlFor="section-heading" className="text-xs">Heading</Label>
+              <Input
+                id="section-heading"
+                value={content.heading || ""}
+                onChange={(e) => updateContent("heading", e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+          )}
+
+          {content.subheading !== undefined && (
+            <div className="space-y-2">
+              <Label htmlFor="section-subheading" className="text-xs">Subheading</Label>
+              <Input
+                id="section-subheading"
+                value={content.subheading || ""}
+                onChange={(e) => updateContent("subheading", e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+          )}
+
+          {content.cta !== undefined && (
+            <div className="space-y-2">
+              <Label htmlFor="section-cta" className="text-xs">Button text</Label>
+              <Input
+                id="section-cta"
+                value={content.cta || ""}
+                onChange={(e) => updateContent("cta", e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+          )}
+
           <Separator />
+
           <div className="space-y-2">
-            <Label className="text-xs">Content (JSON)</Label>
-            <Textarea
-              defaultValue={section.content}
-              onBlur={(e) => {
-                // Content is read-only for now; section editing is via components
-              }}
-              rows={4}
-              className="font-mono text-xs"
-              disabled
+            <Label htmlFor="section-bg" className="text-xs">Background color</Label>
+            <div className="flex gap-2">
+              <input
+                id="section-bg"
+                type="color"
+                value={style.backgroundColor || "#ffffff"}
+                onChange={(e) => updateStyle("backgroundColor", e.target.value)}
+                className="h-8 w-8 cursor-pointer rounded border"
+              />
+              <Input
+                value={style.backgroundColor || "#ffffff"}
+                onChange={(e) => updateStyle("backgroundColor", e.target.value)}
+                placeholder="#ffffff"
+                className="h-8 flex-1 font-mono text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="section-padding" className="text-xs">Padding</Label>
+            <Input
+              id="section-padding"
+              value={style.padding || "2rem"}
+              onChange={(e) => updateStyle("padding", e.target.value)}
+              placeholder="2rem"
+              className="h-8 text-xs"
             />
           </div>
         </div>
+      </div>
+
+      {/* Footer */}
+      <div className="border-t px-4 py-3">
+        <Button
+          variant="destructive"
+          size="sm"
+          className="w-full"
+          onClick={onDelete}
+        >
+          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+          Delete Section
+        </Button>
       </div>
     </div>
   );

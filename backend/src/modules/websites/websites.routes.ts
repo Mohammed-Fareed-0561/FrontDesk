@@ -230,18 +230,22 @@ export async function websitesRoutes(app: FastifyInstance) {
           }
         }
         if (p.sections && page) {
+          const keptSectionIds: string[] = [];
           for (const s of p.sections) {
             if (s.id) {
               const sec = await prisma.websiteSection.findFirst({ where: { id: s.id, pageId: page.id } });
               if (sec) {
                 await prisma.websiteSection.update({ where: { id: sec.id }, data: { sectionType: s.sectionType, sortOrder: s.sortOrder, content: JSON.stringify(s.content), styleConfig: s.styleConfig ? JSON.stringify(s.styleConfig) : undefined, visibilityConfig: s.visibilityConfig ? JSON.stringify(s.visibilityConfig) : undefined } });
                 if (s.components) await persistComponents(sec.id, s.components);
+                keptSectionIds.push(sec.id);
                 continue;
               }
             }
             const section = await prisma.websiteSection.create({ data: { pageId: page.id, sectionType: s.sectionType, sortOrder: s.sortOrder || 0, content: JSON.stringify(s.content), styleConfig: s.styleConfig ? JSON.stringify(s.styleConfig) : undefined, visibilityConfig: s.visibilityConfig ? JSON.stringify(s.visibilityConfig) : undefined } });
             if (s.components) await persistComponents(section.id, s.components);
+            keptSectionIds.push(section.id);
           }
+          await prisma.websiteSection.deleteMany({ where: { pageId: page.id, id: { notIn: keptSectionIds } } });
         }
       }
     }
@@ -262,6 +266,22 @@ export async function websitesRoutes(app: FastifyInstance) {
     await prisma.websiteComponent.delete({ where: { id: component.id } });
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_COMPONENT_DELETED", entityType: "website_component", entityId: component.id } });
     return reply.send({ success: true, data: { id: component.id } });
+  });
+
+  app.delete("/api/v1/businesses/:businessId/website/sections/:sectionId", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
+    const userId = (req as any).userId as string;
+    const { businessId, sectionId } = req.params as any;
+    await assertBusinessAccess(userId, businessId);
+    const section = await prisma.websiteSection.findFirst({
+      where: { id: sectionId },
+      include: { page: { include: { website: true } } },
+    });
+    if (!section || section.page.website.businessId !== businessId) throw Errors.notFound("WebsiteSection");
+    const sectionCount = await prisma.websiteSection.count({ where: { pageId: section.pageId } });
+    if (sectionCount <= 1) throw Errors.validation("A page must keep at least one section");
+    await prisma.websiteSection.delete({ where: { id: section.id } });
+    await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "WEBSITE_SECTION_DELETED", entityType: "website_section", entityId: section.id } });
+    return reply.send({ success: true, data: { id: section.id } });
   });
 
   app.get("/api/v1/businesses/:businessId/website/preview", { preHandler: [(app as any).authenticate] }, async (req, reply) => {
