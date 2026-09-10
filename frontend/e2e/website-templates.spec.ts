@@ -97,6 +97,12 @@ test.describe("Template & Section Pack System", () => {
     // Click Use on first template
     await page.getByRole("button", { name: "Use" }).first().click();
 
+    // Confirmation dialog should appear
+    await expect(page.getByText("Replace your current website?")).toBeVisible({ timeout: 5000 });
+
+    // Confirm import
+    await page.getByRole("button", { name: "Replace & Continue" }).click();
+
     // Wait for import to complete
     await page.waitForResponse(
       (response) => response.url().includes("/templates/") && response.url().includes("/import") && response.status() === 200

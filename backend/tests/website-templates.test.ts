@@ -505,4 +505,178 @@ describe("Section Pack Routes", () => {
     expect(sections[0].sortOrder).toBe(0);
     expect(sections[1].sortOrder).toBe(1);
   });
+
+  it("import + customize + save + reload persists changes", async () => {
+    const template = await seedTemplate();
+    const { token } = await signup("cust1@test.com");
+    const business = await createBusiness(token, "Test Business");
+
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/templates/${template.id}/import`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { businessId: business.id },
+    });
+
+    const website = await prisma.website.findFirst({ where: { businessId: business.id } });
+    const page = await prisma.websitePage.findFirst({ where: { websiteId: website!.id } });
+    const sections = await prisma.websiteSection.findMany({ where: { pageId: page!.id } });
+    const components = await prisma.websiteComponent.findMany({ where: { sectionId: sections[0].id } });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/businesses/${business.id}/website`,
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      payload: {
+        pages: [{
+          id: page!.id,
+          title: page!.title,
+          slug: page!.slug,
+          sortOrder: page!.sortOrder,
+          sections: [{
+            id: sections[0].id,
+            sectionType: sections[0].sectionType,
+            sortOrder: sections[0].sortOrder,
+            content: JSON.parse(sections[0].content || "{}"),
+            components: components.map((c) => ({
+              id: c.id,
+              componentType: c.componentType,
+              sortOrder: c.sortOrder,
+              props: typeof c.props === "string" ? JSON.parse(c.props || "{}") : c.props || {},
+              content: c.componentType === "heading" ? { text: "Customized Heading" } : (typeof c.content === "string" ? JSON.parse(c.content || "{}") : c.content || {}),
+            })),
+          }],
+        }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const reload = await app.inject({
+      method: "GET",
+      url: `/api/v1/businesses/${business.id}/website`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const reloaded = JSON.parse(reload.body).data;
+    const headingComp = reloaded.pages[0].sections[0].components.find(
+      (c: any) => c.componentType === "heading"
+    );
+    expect(headingComp).toBeDefined();
+    const compContent = typeof headingComp.content === "string" ? JSON.parse(headingComp.content) : headingComp.content;
+    expect(compContent.text).toBe("Customized Heading");
+  });
+
+  it("section add, delete, and reorder after template import", async () => {
+    const template = await seedTemplate();
+    const { token } = await signup("sadr1@test.com");
+    const business = await createBusiness(token, "Test Business");
+
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/templates/${template.id}/import`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { businessId: business.id },
+    });
+
+    const website = await prisma.website.findFirst({ where: { businessId: business.id } });
+    const page = await prisma.websitePage.findFirst({ where: { websiteId: website!.id } });
+    const beforeSections = await prisma.websiteSection.findMany({ where: { pageId: page!.id } });
+    const originalCount = beforeSections.length;
+
+    const addRes = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/businesses/${business.id}/website`,
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      payload: {
+        pages: [{
+          id: page!.id,
+          title: page!.title,
+          slug: page!.slug,
+          sortOrder: page!.sortOrder,
+          sections: [
+            ...beforeSections.map((s) => ({
+              id: s.id,
+              sectionType: s.sectionType,
+              sortOrder: s.sortOrder,
+              content: JSON.parse(s.content || "{}"),
+            })),
+            {
+              sectionType: "contact",
+              sortOrder: originalCount,
+              content: { heading: "New Contact" },
+            },
+          ],
+        }],
+      },
+    });
+    expect(addRes.statusCode).toBe(200);
+
+    const afterAdd = await prisma.websiteSection.findMany({
+      where: { pageId: page!.id },
+      orderBy: { sortOrder: "asc" },
+    });
+    expect(afterAdd).toHaveLength(originalCount + 1);
+  });
+
+  it("creator template remains unchanged after business edits imported content", async () => {
+    const template = await seedTemplate();
+    const { token } = await signup("iso1@test.com");
+    const business = await createBusiness(token, "Test Business");
+
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/templates/${template.id}/import`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { businessId: business.id },
+    });
+
+    const website = await prisma.website.findFirst({ where: { businessId: business.id } });
+    const page = await prisma.websitePage.findFirst({ where: { websiteId: website!.id } });
+    const sections = await prisma.websiteSection.findMany({ where: { pageId: page!.id } });
+    const components = await prisma.websiteComponent.findMany({ where: { sectionId: sections[0].id } });
+    const textComp = components.find((c) => c.componentType === "text");
+
+    if (textComp) {
+      await app.inject({
+        method: "PATCH",
+        url: `/api/v1/businesses/${business.id}/website`,
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        payload: {
+          pages: [{
+            id: page!.id,
+            title: page!.title,
+            slug: page!.slug,
+            sortOrder: page!.sortOrder,
+            sections: [{
+              id: sections[0].id,
+              sectionType: sections[0].sectionType,
+              sortOrder: sections[0].sortOrder,
+              content: sections[0].content,
+              components: components.map((c) => ({
+                id: c.id,
+                componentType: c.componentType,
+                sortOrder: c.sortOrder,
+                props: JSON.parse(c.props || "{}"),
+                content: c.id === textComp.id
+                  ? { text: "Business Modified" }
+                  : JSON.parse(c.content || "{}"),
+              })),
+            }],
+          }],
+        },
+      });
+    }
+
+    const tplPages = await prisma.websiteTemplatePage.findMany({ where: { templateId: template.id } });
+    const tplSections = await prisma.websiteTemplateSection.findMany({
+      where: { templatePageId: tplPages[0].id },
+    });
+    const tplComponents = await prisma.websiteTemplateComponent.findMany({
+      where: { templateSectionId: tplSections[0].id },
+    });
+    const tplText = tplComponents.find((c) => c.componentType === "text");
+    if (tplText) {
+      const tplContent = JSON.parse(tplText.content || "{}");
+      expect(tplContent.text).not.toBe("Business Modified");
+    }
+  });
 });

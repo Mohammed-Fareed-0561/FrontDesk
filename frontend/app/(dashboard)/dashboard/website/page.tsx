@@ -524,6 +524,7 @@ export default function WebsiteDesignerPage() {
           onSaveTheme={saveTheme}
           businessId={selectedId}
           onTemplateImported={loadWebsite}
+          onSectionPackImported={loadWebsite}
         />
 
         {/* Center Canvas */}

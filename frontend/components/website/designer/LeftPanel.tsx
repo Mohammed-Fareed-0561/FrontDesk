@@ -21,7 +21,16 @@ import {
   Download,
   Loader2,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { WebsitePage, WebsiteSection, WebsiteComponent, WebsiteTemplate, SectionPack } from "@/types";
 import type { DesignerLeftTab, ComponentPreset, SectionPreset } from "@/lib/designer/types";
 import { ordered, slugify } from "@/lib/designer/utils";
@@ -60,6 +69,7 @@ interface LeftPanelProps {
   onSaveTheme: (theme: WebsiteTheme) => Promise<void>;
   businessId: string;
   onTemplateImported?: () => void;
+  onSectionPackImported?: () => void;
 }
 
 const COMPONENT_PRESETS: ComponentPreset[] = [
@@ -289,6 +299,7 @@ export function LeftPanel({
   onSaveTheme,
   businessId,
   onTemplateImported,
+  onSectionPackImported,
 }: LeftPanelProps) {
   const [activeTab, setActiveTab] = useState<DesignerLeftTab>("add");
   const [showNewPage, setShowNewPage] = useState(false);
@@ -393,7 +404,9 @@ export function LeftPanel({
         {activeTab === "templates" && (
           <TemplatesTab
             businessId={businessId}
+            currentPageId={currentPageId}
             onTemplateImported={onTemplateImported}
+            onSectionPackImported={onSectionPackImported}
           />
         )}
         {activeTab === "pages" && (
@@ -827,10 +840,14 @@ function StyleTab({
 
 function TemplatesTab({
   businessId,
+  currentPageId,
   onTemplateImported,
+  onSectionPackImported,
 }: {
   businessId: string;
+  currentPageId: string | null;
   onTemplateImported?: () => void;
+  onSectionPackImported?: () => void;
 }) {
   const [templates, setTemplates] = useState<WebsiteTemplate[]>([]);
   const [packs, setPacks] = useState<SectionPack[]>([]);
@@ -840,6 +857,9 @@ function TemplatesTab({
   const [previewData, setPreviewData] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<"templates" | "packs">("templates");
+  const [confirmImportId, setConfirmImportId] = useState<string | null>(null);
+  const [confirmTemplateName, setConfirmTemplateName] = useState("");
+  const [importingPack, setImportingPack] = useState<string | null>(null);
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -878,6 +898,15 @@ function TemplatesTab({
   };
 
   const handleImport = async (templateId: string) => {
+    const tpl = templates.find((t) => t.id === templateId);
+    setConfirmImportId(templateId);
+    setConfirmTemplateName(tpl?.name || "this template");
+  };
+
+  const confirmImport = async () => {
+    if (!confirmImportId) return;
+    const templateId = confirmImportId;
+    setConfirmImportId(null);
     setImporting(templateId);
     try {
       await apiClient(`/templates/${templateId}/import`, {
@@ -894,6 +923,22 @@ function TemplatesTab({
     }
   };
 
+  const handleSectionPackImport = async (packId: string) => {
+    if (!currentPageId) return;
+    setImportingPack(packId);
+    try {
+      await apiClient(`/section-packs/${packId}/import`, {
+        method: "POST",
+        body: { businessId, pageId: currentPageId },
+      });
+      onSectionPackImported?.();
+    } catch {
+      // silently fail
+    } finally {
+      setImportingPack(null);
+    }
+  };
+
   const categories = Array.from(new Set(templates.map((t) => t.category)));
   const packCategories = Array.from(new Set(packs.map((p) => p.category)));
 
@@ -907,6 +952,28 @@ function TemplatesTab({
 
   return (
     <div className="p-3 space-y-4">
+      <Dialog open={!!confirmImportId} onOpenChange={(open) => { if (!open) setConfirmImportId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Replace your current website?
+            </DialogTitle>
+            <DialogDescription>
+              This will replace the pages and sections currently in your website with {confirmTemplateName}. Your current content will be removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmImportId(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmImport}>
+              Replace &amp; Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div>
         <h3 className="text-sm font-semibold">Templates</h3>
         <p className="text-xs text-muted-foreground mt-0.5">Choose a template or section pack</p>
@@ -1030,6 +1097,9 @@ function TemplatesTab({
 
       {activeSection === "packs" && (
         <>
+          {!currentPageId && (
+            <p className="text-xs text-muted-foreground">Select a page to add sections to.</p>
+          )}
           {packCategories.map((category) => (
             <div key={category} className="space-y-1.5">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{category}</p>
@@ -1047,6 +1117,21 @@ function TemplatesTab({
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground">{pack.description}</p>
+                    {currentPageId && (
+                      <Button
+                        size="sm"
+                        className="h-6 text-xs w-full"
+                        onClick={() => handleSectionPackImport(pack.id)}
+                        disabled={importingPack === pack.id}
+                      >
+                        {importingPack === pack.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <Plus className="h-3 w-3 mr-1" />
+                        )}
+                        Add to Page
+                      </Button>
+                    )}
                   </div>
                 ))}
             </div>
