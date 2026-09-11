@@ -30,14 +30,15 @@ import {
   Layers,
 } from "lucide-react";
 import type { WebsiteComponent, WebsiteSection } from "@/types";
-import { parseObject, componentLabel, classifyComponent } from "@/lib/designer/utils";
-import type { DesignerSelection } from "@/lib/designer/types";
+import { parseObject, componentLabel, classifyComponent, getResponsiveConfig, setResponsiveConfig, getResponsiveValue, hasResponsiveOverride, clearResponsiveOverride } from "@/lib/designer/utils";
+import type { DesignerSelection, DeviceMode, ResponsiveConfig, ResponsiveOverride } from "@/lib/designer/types";
 
 interface RightPanelProps {
   selection: DesignerSelection;
   component: WebsiteComponent | null;
   section: WebsiteSection | null;
   businessId: string;
+  device: DeviceMode;
   onUpdateComponent: (id: string, changes: Partial<WebsiteComponent>) => void;
   onDeleteComponent: (id: string) => void;
   onMoveComponent: (id: string, direction: -1 | 1) => void;
@@ -53,6 +54,7 @@ export function RightPanel({
   component,
   section,
   businessId,
+  device,
   onUpdateComponent,
   onDeleteComponent,
   onMoveComponent,
@@ -67,6 +69,7 @@ export function RightPanel({
       <ComponentEditor
         component={component}
         businessId={businessId}
+        device={device}
         onUpdate={(changes) => onUpdateComponent(component.id, changes)}
         onDelete={() => onDeleteComponent(component.id)}
         onMove={(dir) => onMoveComponent(component.id, dir)}
@@ -80,6 +83,7 @@ export function RightPanel({
       <SectionEditor
         section={section}
         businessId={businessId}
+        device={device}
         onUpdate={(changes) => onUpdateSection(section.id, changes)}
         onMove={(dir) => onMoveSection(section.id, dir)}
         onDuplicate={() => onDuplicateSection(section.id)}
@@ -441,11 +445,241 @@ function VideoBackgroundControls({
   );
 }
 
+/* ── Responsive Controls ──────────────────────────────────── */
+
+function ResponsiveControls({
+  device,
+  responsive,
+  kind,
+  onUpdate,
+  onClear,
+  baseFontSize,
+}: {
+  device: DeviceMode;
+  responsive: ResponsiveConfig;
+  kind: string;
+  onUpdate: (property: keyof ResponsiveOverride, value: any) => void;
+  onClear: (property: keyof ResponsiveOverride) => void;
+  baseFontSize?: number;
+}) {
+  const deviceLabel = device === "tablet" ? "Tablet" : "Mobile";
+  const deviceConfig = responsive[device as "tablet" | "mobile"] || {};
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label className="text-xs font-medium">{deviceLabel} Overrides</Label>
+        <p className="text-[10px] text-muted-foreground">
+          Override settings for {device} view. Leave empty to use desktop defaults.
+        </p>
+      </div>
+
+      {/* Visibility */}
+      <div className="space-y-2">
+        <Label className="text-xs">Visible on {device}</Label>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={deviceConfig.visible !== false}
+            onCheckedChange={(checked) => onUpdate("visible", checked ? undefined : false)}
+          />
+          <span className="text-xs text-muted-foreground">
+            {deviceConfig.visible !== false ? "Shown" : "Hidden"}
+          </span>
+        </div>
+      </div>
+
+      {/* Typography (for text/heading types) */}
+      {(kind === "heading" || kind === "text" || kind === "paragraph") && (
+        <>
+          <div className="space-y-2">
+            <Label className="text-xs">Font size</Label>
+            <div className="flex gap-2 items-center">
+              <Input
+                type="number"
+                value={deviceConfig.fontSize || ""}
+                onChange={(e) => onUpdate("fontSize", e.target.value ? Number(e.target.value) : undefined)}
+                placeholder={`${baseFontSize || 18}px`}
+                min={8}
+                max={120}
+                className="h-8 text-xs flex-1"
+              />
+              <span className="text-xs text-muted-foreground">px</span>
+              {deviceConfig.fontSize !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => onClear("fontSize")}
+                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Alignment</Label>
+            <div className="flex gap-1">
+              {(["left", "center", "right"] as const).map((align) => (
+                <button
+                  key={align}
+                  type="button"
+                  onClick={() => onUpdate("alignment", deviceConfig.alignment === align ? undefined : align)}
+                  className={`flex-1 rounded border px-2 py-1 text-xs ${
+                    deviceConfig.alignment === align
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  {align === "left" ? "Left" : align === "center" ? "Center" : "Right"}
+                </button>
+              ))}
+            </div>
+            {deviceConfig.alignment !== undefined && (
+              <button
+                type="button"
+                onClick={() => onClear("alignment")}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                Reset to default
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Layout (for grid-based components) */}
+      {(kind === "services" || kind === "products" || kind === "gallery" ||
+        kind === "testimonials" || kind === "contact") && (
+        <div className="space-y-2">
+          <Label className="text-xs">Columns</Label>
+          <div className="flex gap-1">
+            {[1, 2, 3, 4].map((col) => (
+              <button
+                key={col}
+                type="button"
+                onClick={() => onUpdate("columns", deviceConfig.columns === col ? undefined : col)}
+                className={`flex-1 rounded border px-2 py-1 text-xs ${
+                  deviceConfig.columns === col
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted"
+                }`}
+              >
+                {col}
+              </button>
+            ))}
+          </div>
+          {deviceConfig.columns !== undefined && (
+            <button
+              type="button"
+              onClick={() => onClear("columns")}
+              className="text-[10px] text-muted-foreground hover:text-foreground"
+            >
+              Reset to default
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Image controls */}
+      {(kind === "image" || kind === "photo" || kind === "banner") && (
+        <>
+          <div className="space-y-2">
+            <Label className="text-xs">Object fit</Label>
+            <select
+              value={deviceConfig.objectFit || ""}
+              onChange={(e) => onUpdate("objectFit", e.target.value || undefined)}
+              className="w-full h-8 rounded border bg-background px-2 text-xs"
+            >
+              <option value="">Default</option>
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+              <option value="fill">Fill</option>
+            </select>
+            {deviceConfig.objectFit !== undefined && (
+              <button
+                type="button"
+                onClick={() => onClear("objectFit")}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                Reset to default
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Button controls */}
+      {(kind === "button" || kind === "cta" || kind === "link") && (
+        <>
+          <div className="space-y-2">
+            <Label className="text-xs">Button width</Label>
+            <div className="flex gap-1">
+              {(["auto", "full"] as const).map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => onUpdate("buttonWidth", deviceConfig.buttonWidth === w ? undefined : w)}
+                  className={`flex-1 rounded border px-2 py-1 text-xs ${
+                    deviceConfig.buttonWidth === w
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  {w === "auto" ? "Auto" : "Full width"}
+                </button>
+              ))}
+            </div>
+            {deviceConfig.buttonWidth !== undefined && (
+              <button
+                type="button"
+                onClick={() => onClear("buttonWidth")}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                Reset to default
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Button size</Label>
+            <div className="flex gap-1">
+              {(["sm", "md", "lg"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onUpdate("buttonSize", deviceConfig.buttonSize === s ? undefined : s)}
+                  className={`flex-1 rounded border px-2 py-1 text-xs ${
+                    deviceConfig.buttonSize === s
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  {s === "sm" ? "Small" : s === "md" ? "Medium" : "Large"}
+                </button>
+              ))}
+            </div>
+            {deviceConfig.buttonSize !== undefined && (
+              <button
+                type="button"
+                onClick={() => onClear("buttonSize")}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                Reset to default
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── Component Editor ────────────────────────────────────────── */
 
 function ComponentEditor({
   component,
   businessId,
+  device,
   onUpdate,
   onDelete,
   onMove,
@@ -453,6 +687,7 @@ function ComponentEditor({
 }: {
   component: WebsiteComponent;
   businessId: string;
+  device: DeviceMode;
   onUpdate: (changes: Partial<WebsiteComponent>) => void;
   onDelete: () => void;
   onMove: (dir: -1 | 1) => void;
@@ -461,6 +696,7 @@ function ComponentEditor({
   const content = parseObject(component.content);
   const props = parseObject(component.props);
   const styleConfig = parseObject(component.styleConfig);
+  const responsive = getResponsiveConfig(component.styleConfig);
   const kind = classifyComponent(component);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
@@ -476,6 +712,21 @@ function ComponentEditor({
 
   const updateStyle = (key: string, value: any) => {
     onUpdate({ styleConfig: JSON.stringify({ ...styleConfig, [key]: value }) });
+  };
+
+  const updateResponsive = (property: keyof ResponsiveOverride, value: any) => {
+    if (device === "desktop") return;
+    const newConfig = setResponsiveConfig(component.styleConfig, device as "tablet" | "mobile", {
+      ...responsive[device as "tablet" | "mobile"],
+      [property]: value,
+    });
+    onUpdate({ styleConfig: newConfig });
+  };
+
+  const clearResponsive = (property: keyof ResponsiveOverride) => {
+    if (device === "desktop") return;
+    const newConfig = setResponsiveConfig(component.styleConfig, device as "tablet" | "mobile", null);
+    onUpdate({ styleConfig: newConfig });
   };
 
   const handleMediaSelect = (asset: MediaAsset) => {
@@ -632,6 +883,18 @@ function ComponentEditor({
 
           <Separator />
 
+          {/* Responsive Controls */}
+          {device !== "desktop" && (
+            <ResponsiveControls
+              device={device}
+              responsive={responsive}
+              kind={kind}
+              onUpdate={updateResponsive}
+              onClear={clearResponsive}
+              baseFontSize={kind === "heading" || kind === "text" ? 18 : undefined}
+            />
+          )}
+
           {/* Advanced / JSON editing */}
           <div>
             <button
@@ -704,6 +967,7 @@ function ComponentEditor({
 function SectionEditor({
   section,
   businessId,
+  device,
   onUpdate,
   onMove,
   onDuplicate,
@@ -711,6 +975,7 @@ function SectionEditor({
 }: {
   section: WebsiteSection;
   businessId: string;
+  device: DeviceMode;
   onUpdate: (changes: Partial<WebsiteSection>) => void;
   onMove: (dir: -1 | 1) => void;
   onDuplicate: () => void;
@@ -718,6 +983,7 @@ function SectionEditor({
 }) {
   const content = parseObject(section.content);
   const style = parseObject(section.styleConfig);
+  const responsive = getResponsiveConfig(section.styleConfig);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showBgMedia, setShowBgMedia] = useState(false);
 
@@ -727,6 +993,21 @@ function SectionEditor({
 
   const updateStyle = (key: string, value: any) => {
     onUpdate({ styleConfig: JSON.stringify({ ...style, [key]: value }) });
+  };
+
+  const updateResponsive = (property: keyof ResponsiveOverride, value: any) => {
+    if (device === "desktop") return;
+    const newConfig = setResponsiveConfig(section.styleConfig, device as "tablet" | "mobile", {
+      ...responsive[device as "tablet" | "mobile"],
+      [property]: value,
+    });
+    onUpdate({ styleConfig: newConfig });
+  };
+
+  const clearResponsive = (property: keyof ResponsiveOverride) => {
+    if (device === "desktop") return;
+    const newConfig = setResponsiveConfig(section.styleConfig, device as "tablet" | "mobile", null);
+    onUpdate({ styleConfig: newConfig });
   };
 
   const bgMedia = style.backgroundMedia || {};
@@ -850,6 +1131,44 @@ function SectionEditor({
               </div>
             )}
           </div>
+
+          {/* Responsive Section Controls */}
+          {device !== "desktop" && (
+            <div className="space-y-3">
+              <Separator />
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">
+                  {device === "tablet" ? "Tablet" : "Mobile"} Overrides
+                </Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Override settings for {device} view. Leave empty to use desktop defaults.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs">Padding</Label>
+                <Input
+                  value={responsive[device as "tablet" | "mobile"]?.padding || ""}
+                  onChange={(e) => updateResponsive("padding", e.target.value || undefined)}
+                  placeholder={style.padding || "2rem"}
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs">Visible on {device}</Label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={responsive[device as "tablet" | "mobile"]?.visible !== false}
+                    onCheckedChange={(checked) => updateResponsive("visible", checked ? undefined : false)}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {responsive[device as "tablet" | "mobile"]?.visible !== false ? "Shown" : "Hidden"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

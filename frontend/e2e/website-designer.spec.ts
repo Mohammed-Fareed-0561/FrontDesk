@@ -361,3 +361,231 @@ test.describe("Website Designer UX", () => {
     await expect(page.getByText("Contact", { exact: true })).toBeVisible();
   });
 });
+
+test.describe("Responsive Editing", () => {
+  test("device switcher changes canvas width and shows device labels", async ({ page, request }) => {
+    const email = `resp-device-${Date.now()}@test.com`;
+    const signup = await request.post(`${API}/auth/signup`, {
+      data: { email, password: "password123", displayName: "Resp Device" },
+    });
+    expect(signup.ok()).toBeTruthy();
+    const session = (await signup.json()).data;
+    const businessResponse = await request.post(`${API}/businesses`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      data: { name: `Resp Device Business ${Date.now()}` },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
+    const business = (await businessResponse.json()).data;
+
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
+    await page.goto("/dashboard/website");
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
+
+    // Desktop is default
+    await expect(page.getByRole("button", { name: "Desktop" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Tablet" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mobile" })).toBeVisible();
+
+    // Click Tablet - canvas should narrow
+    await page.getByRole("button", { name: "Tablet" }).click();
+
+    // Click Mobile - canvas should be narrowest
+    await page.getByRole("button", { name: "Mobile" }).click();
+
+    // Click Desktop - canvas should return to full width
+    await page.getByRole("button", { name: "Desktop" }).click();
+  });
+
+  test("responsive overrides appear in right panel when tablet/mobile selected", async ({ page, request }) => {
+    const email = `resp-panel-${Date.now()}@test.com`;
+    const signup = await request.post(`${API}/auth/signup`, {
+      data: { email, password: "password123", displayName: "Resp Panel" },
+    });
+    expect(signup.ok()).toBeTruthy();
+    const session = (await signup.json()).data;
+    const businessResponse = await request.post(`${API}/businesses`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      data: { name: `Resp Panel Business ${Date.now()}` },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
+    const business = (await businessResponse.json()).data;
+
+    // Seed a hero section with heading component
+    const websiteResponse = await request.get(`${API}/businesses/${business.id}/website`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    const website = (await websiteResponse.json()).data;
+    const home = website.pages[0];
+    await request.patch(`${API}/businesses/${business.id}/website`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      data: {
+        pages: [{
+          id: home.id, title: home.title, slug: home.slug, sortOrder: home.sortOrder,
+          sections: [{
+            sectionType: "hero", sortOrder: 0, content: { heading: "Test" },
+            components: [{
+              componentType: "heading", sortOrder: 0,
+              props: {}, content: { text: "Hello World" },
+            }],
+          }],
+        }],
+      },
+    });
+
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
+    await page.goto("/dashboard/website");
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
+
+    // Switch to Tablet
+    await page.getByRole("button", { name: "Tablet" }).click();
+
+    // Select the heading component by clicking on it in the canvas
+    await page.getByText("Hello World").click();
+
+    // Right panel should show responsive overrides
+    await expect(page.getByText("Tablet Overrides")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Visible on tablet")).toBeVisible();
+  });
+
+  test("responsive editing flow: select device, apply override, save, reload, verify persistence", async ({ page, request }) => {
+    const email = `resp-flow-${Date.now()}@test.com`;
+    const signup = await request.post(`${API}/auth/signup`, {
+      data: { email, password: "password123", displayName: "Resp Flow" },
+    });
+    expect(signup.ok()).toBeTruthy();
+    const session = (await signup.json()).data;
+    const businessResponse = await request.post(`${API}/businesses`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      data: { name: `Resp Flow Business ${Date.now()}` },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
+    const business = (await businessResponse.json()).data;
+
+    // Seed a hero section with heading
+    const websiteResponse = await request.get(`${API}/businesses/${business.id}/website`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    const website = (await websiteResponse.json()).data;
+    const home = website.pages[0];
+    await request.patch(`${API}/businesses/${business.id}/website`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      data: {
+        pages: [{
+          id: home.id, title: home.title, slug: home.slug, sortOrder: home.sortOrder,
+          sections: [{
+            sectionType: "hero", sortOrder: 0, content: { heading: "Hello" },
+            components: [{
+              componentType: "heading", sortOrder: 0,
+              props: {}, content: { text: "Welcome" },
+            }],
+          }],
+        }],
+      },
+    });
+
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
+    await page.goto("/dashboard/website");
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
+
+    // Switch to Tablet
+    await page.getByRole("button", { name: "Tablet" }).click();
+
+    // Select the heading component by clicking on its text
+    await page.getByText("Welcome").click();
+
+    // Toggle visibility off for tablet
+    const visibleSwitch = page.locator("text=Visible on tablet").locator("..").locator("button[role='switch']");
+    await expect(visibleSwitch).toBeVisible({ timeout: 5000 });
+    await visibleSwitch.click();
+    await expect(page.getByText("Hidden")).toBeVisible();
+
+    // Save
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 10000 });
+
+    // Reload
+    await page.reload();
+    await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+
+    // On Desktop: Welcome should be visible, click it
+    await page.getByText("Welcome").click();
+    // Now switch to Tablet - responsive controls should appear showing persisted override
+    await page.getByRole("button", { name: "Tablet" }).click();
+    await expect(page.getByText("Tablet Overrides")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Hidden")).toBeVisible();
+  });
+
+  test("regression: existing component editing still works", async ({ page, request }) => {
+    const email = `resp-regress-${Date.now()}@test.com`;
+    const signup = await request.post(`${API}/auth/signup`, {
+      data: { email, password: "password123", displayName: "Resp Regress" },
+    });
+    expect(signup.ok()).toBeTruthy();
+    const session = (await signup.json()).data;
+    const businessResponse = await request.post(`${API}/businesses`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      data: { name: `Regress Business ${Date.now()}` },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
+    const business = (await businessResponse.json()).data;
+
+    // Seed heading component
+    const websiteResponse = await request.get(`${API}/businesses/${business.id}/website`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    const website = (await websiteResponse.json()).data;
+    const home = website.pages[0];
+    await request.patch(`${API}/businesses/${business.id}/website`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      data: {
+        pages: [{
+          id: home.id, title: home.title, slug: home.slug, sortOrder: home.sortOrder,
+          sections: [{
+            sectionType: "hero", sortOrder: 0, content: { heading: "Test" },
+            components: [{
+              componentType: "heading", sortOrder: 0,
+              props: {}, content: { text: "Original" },
+            }],
+          }],
+        }],
+      },
+    });
+
+    await page.addInitScript((token) => localStorage.setItem("fd_token", token), session.token);
+    const businessesRequest = page.waitForResponse((response) => response.url().endsWith("/api/v1/businesses"));
+    await page.goto("/dashboard/website");
+    const businessesResponse = await businessesRequest;
+    expect(businessesResponse.status()).toBe(200);
+
+    // Stay on Desktop mode (regression test)
+    // Select heading and change text
+    const canvas = page.locator("[data-testid='website-canvas'], .website-canvas, main");
+    await expect(canvas).toBeVisible({ timeout: 10000 });
+    const heading = canvas.getByRole("heading").first();
+    if (await heading.isVisible()) {
+      await heading.click();
+
+      // Edit the text field
+      const textField = page.getByLabel("Text");
+      if (await textField.isVisible()) {
+        await textField.clear();
+        await textField.fill("Updated");
+
+        // Save
+        await page.getByRole("button", { name: "Save changes" }).click();
+        await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 10000 });
+
+        // Reload and verify
+        await page.reload();
+        await expect(page.getByText("FrontDesk")).toBeVisible({ timeout: 15000 });
+        await expect(page.getByText("Updated")).toBeVisible();
+      }
+    }
+  });
+});

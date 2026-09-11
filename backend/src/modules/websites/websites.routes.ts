@@ -29,6 +29,32 @@ const websiteTreeInclude: any = {
 
 const jsonObject = z.record(z.unknown());
 
+const responsiveOverrideSchema = z.object({
+  fontSize: z.number().min(8).max(200).optional(),
+  lineHeight: z.number().min(0.5).max(5).optional(),
+  alignment: z.enum(["left", "center", "right"]).optional(),
+  columns: z.number().int().min(1).max(6).optional(),
+  direction: z.enum(["row", "column"]).optional(),
+  gap: z.string().max(20).optional(),
+  padding: z.string().max(30).optional(),
+  margin: z.string().max(30).optional(),
+  width: z.string().max(30).optional(),
+  visible: z.boolean().optional(),
+  objectFit: z.enum(["cover", "contain", "fill"]).optional(),
+  objectPosition: z.string().max(30).optional(),
+  buttonWidth: z.enum(["auto", "full"]).optional(),
+  buttonSize: z.enum(["sm", "md", "lg"]).optional(),
+}).strict();
+
+const responsiveConfigSchema = z.object({
+  tablet: responsiveOverrideSchema.optional(),
+  mobile: responsiveOverrideSchema.optional(),
+}).strict().optional();
+
+const styleConfigSchema = z.object({
+  responsive: responsiveConfigSchema,
+}).passthrough().optional();
+
 const pageCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
   slug: z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must contain lowercase letters, numbers, and hyphens only"),
@@ -78,7 +104,11 @@ const websitePatchSchema = z.object({
       sectionType: z.string(),
       sortOrder: z.number().optional(),
       content: z.any(),
-      styleConfig: z.any().optional(),
+      styleConfig: z.any().optional().refine((val) => {
+        if (!val || !val.responsive) return true;
+        const result = responsiveConfigSchema.safeParse(val.responsive);
+        return result.success;
+      }, { message: "Invalid responsive configuration in section" }),
       visibilityConfig: z.any().optional(),
       components: z.array(z.object({
         id: z.string().optional(),
@@ -86,7 +116,11 @@ const websitePatchSchema = z.object({
         sortOrder: z.number().int().min(0).optional(),
         props: jsonObject,
         content: jsonObject.optional(),
-        styleConfig: jsonObject.optional(),
+        styleConfig: jsonObject.optional().refine((val) => {
+          if (!val || !val.responsive) return true;
+          const result = responsiveConfigSchema.safeParse(val.responsive);
+          return result.success;
+        }, { message: "Invalid responsive configuration" }),
         assetRefs: z.array(z.string()).optional(),
         sourceType: z.string().max(50).optional(),
         sourceId: z.string().max(200).optional(),

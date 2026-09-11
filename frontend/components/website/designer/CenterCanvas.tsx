@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Globe } from "lucide-react";
 import type { WebsitePage, WebsiteSection, WebsiteComponent } from "@/types";
-import { ordered, parseObject, componentLabel } from "@/lib/designer/utils";
+import { ordered, parseObject, componentLabel, getResponsiveConfig, getEffectiveStyle, getResponsiveValue } from "@/lib/designer/utils";
 import type { DesignerSelection, DeviceMode } from "@/lib/designer/types";
 
 interface CenterCanvasProps {
@@ -97,6 +97,7 @@ export function CenterCanvas({
               key={section.id}
               section={section}
               selection={selection}
+              device={device}
               onSelect={onSelect}
             />
           ))
@@ -111,28 +112,37 @@ export function CenterCanvas({
 function SectionRenderer({
   section,
   selection,
+  device,
   onSelect,
 }: {
   section: WebsiteSection;
   selection: DesignerSelection;
+  device: DeviceMode;
   onSelect: (type: "component" | "section", id: string) => void;
 }) {
   const content = parseObject(section.content);
-  const style = parseObject(section.styleConfig);
+  const rawStyle = parseObject(section.styleConfig);
+  const responsive = getResponsiveConfig(section.styleConfig);
   const components = useMemo(() => ordered(section.components), [section.components]);
   const isSelected = selection.type === "section" && selection.id === section.id;
-  const bgMedia = style.backgroundMedia || {};
+  const bgMedia = rawStyle.backgroundMedia || {};
   const hasVideo = bgMedia.src && bgMedia.type === "video";
   const hasImage = bgMedia.src && bgMedia.type === "image";
   const filterCSS = buildFilterCSS(bgMedia);
   const objectPos = buildObjectPosition(bgMedia);
 
+  const sectionVisible = getResponsiveValue(responsive, device, "visible", true);
+  if (!sectionVisible) return null;
+
+  const padding = getResponsiveValue(responsive, device, "padding", rawStyle.padding);
+  const bgColor = rawStyle.backgroundColor;
+
   return (
     <div
       className={`relative group overflow-hidden ${isSelected ? "ring-2 ring-primary" : "hover:ring-1 hover:ring-primary/50"}`}
       style={{
-        backgroundColor: style.backgroundColor || undefined,
-        padding: style.padding || undefined,
+        backgroundColor: bgColor || undefined,
+        padding: padding || undefined,
       }}
       onClick={(e) => {
         e.stopPropagation();
@@ -231,6 +241,7 @@ function SectionRenderer({
                   key={component.id}
                   component={component}
                   isSelected={selection.type === "component" && selection.id === component.id}
+                  device={device}
                   onSelect={() => onSelect("component", component.id)}
                 />
               ))}
@@ -247,17 +258,36 @@ function SectionRenderer({
 function ComponentRenderer({
   component,
   isSelected,
+  device,
   onSelect,
 }: {
   component: WebsiteComponent;
   isSelected: boolean;
+  device: DeviceMode;
   onSelect: () => void;
 }) {
   const content = parseObject(component.content);
   const props = parseObject(component.props);
   const styleConfig = parseObject(component.styleConfig);
+  const responsive = getResponsiveConfig(component.styleConfig);
   const kind = component.componentType.toLowerCase();
   const filterCSS = buildFilterCSS(styleConfig);
+
+  const compVisible = getResponsiveValue(responsive, device, "visible", true);
+  if (!compVisible) return null;
+
+  const fontSize = getResponsiveValue(responsive, device, "fontSize", undefined);
+  const alignment = getResponsiveValue(responsive, device, "alignment", undefined);
+  const columns = getResponsiveValue(responsive, device, "columns", undefined);
+  const imgFit = getResponsiveValue(responsive, device, "objectFit", undefined);
+  const imgPosition = getResponsiveValue(responsive, device, "objectPosition", undefined);
+  const btnWidth = getResponsiveValue(responsive, device, "buttonWidth", undefined);
+  const btnSize = getResponsiveValue(responsive, device, "buttonSize", undefined);
+
+  const textAlignment = alignment ? { textAlign: alignment as "left" | "center" | "right" } : {};
+  const headingStyle = fontSize ? { fontSize: `${fontSize}px` } : {};
+  const gridCols = columns || (kind === "gallery" || kind === "carousel" ? 3 : kind === "services" || kind === "service-list" || kind === "testimonials" || kind === "reviews" ? 2 : kind === "products" || kind === "product-list" ? 3 : undefined);
+  const gridClass = gridCols === 1 ? "grid-cols-1" : gridCols === 2 ? "grid-cols-2" : gridCols === 4 ? "grid-cols-4" : "grid-cols-3";
 
   return (
     <div
@@ -280,7 +310,7 @@ function ComponentRenderer({
 
       {/* Text / Heading */}
       {(kind === "text" || kind === "heading" || kind.includes("hero")) && (
-        <div className="py-2">
+        <div className="py-2" style={{ ...headingStyle, ...textAlignment }}>
           <p className="text-lg font-semibold">{content.text || content.heading || "Text block"}</p>
         </div>
       )}
@@ -305,6 +335,8 @@ function ComponentRenderer({
               style={{
                 opacity: (styleConfig.opacity ?? 100) / 100,
                 filter: filterCSS !== "none" ? filterCSS : undefined,
+                objectFit: imgFit || undefined,
+                objectPosition: imgPosition || undefined,
               }}
             />
           ) : (
@@ -318,7 +350,7 @@ function ComponentRenderer({
       {/* Gallery */}
       {(kind === "gallery" || kind === "carousel") && (
         <div className="py-2">
-          <div className="grid grid-cols-3 gap-2">
+          <div className={`grid ${gridClass} gap-2`}>
             {content.images && content.images.length > 0 ? (
               content.images.map((img: any, i: number) => (
                 <div key={i} className="aspect-square bg-muted rounded-lg overflow-hidden">
@@ -344,10 +376,12 @@ function ComponentRenderer({
 
       {/* Button */}
       {(kind === "button" || kind === "cta" || kind === "link") && (
-        <div className="py-2">
+        <div className="py-2" style={textAlignment}>
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md bg-foreground px-6 py-2.5 text-sm font-medium text-background hover:opacity-90 transition-opacity"
+            className={`inline-flex items-center justify-center rounded-md bg-foreground text-background hover:opacity-90 transition-opacity ${
+              btnWidth === "full" ? "w-full" : ""
+            } ${btnSize === "sm" ? "px-3 py-1.5 text-xs" : btnSize === "lg" ? "px-8 py-3 text-base" : "px-6 py-2.5 text-sm"}`}
           >
             {content.text || "Click me"}
           </button>
@@ -357,7 +391,7 @@ function ComponentRenderer({
       {/* Services */}
       {(kind === "services" || kind === "service-list") && (
         <div className="py-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className={`grid ${gridClass} gap-3`}>
             {(content.items || []).length > 0 ? (
               (content.items || []).map((item: any, i: number) => (
                 <div key={i} className="rounded-lg border p-3">
@@ -378,7 +412,7 @@ function ComponentRenderer({
       {/* Products */}
       {(kind === "products" || kind === "product-list") && (
         <div className="py-2">
-          <div className="grid grid-cols-3 gap-3">
+          <div className={`grid ${gridClass} gap-3`}>
             {[0, 1, 2].map((i) => (
               <div key={i} className="rounded-lg border overflow-hidden">
                 <div className="aspect-square bg-muted" />
@@ -418,7 +452,7 @@ function ComponentRenderer({
       {/* Testimonials */}
       {(kind === "testimonials" || kind === "reviews") && (
         <div className="py-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className={`grid ${gridClass} gap-3`}>
             {[0, 1].map((i) => (
               <div key={i} className="rounded-lg border p-3">
                 <p className="text-sm italic text-muted-foreground">&ldquo;Great experience!&rdquo;</p>

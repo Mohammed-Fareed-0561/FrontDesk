@@ -544,6 +544,7 @@ export default function WebsiteDesignerPage() {
             component={selectedComponent}
             section={selectedSection}
             businessId={selectedId || ""}
+            device={device}
             onUpdateComponent={updateComponent}
             onDeleteComponent={deleteComponent}
             onMoveComponent={moveComponent}

@@ -1,5 +1,5 @@
 import type { WebsiteComponent, WebsiteSection } from "@/types";
-import type { ComponentKind } from "./types";
+import type { ComponentKind, DeviceMode, ResponsiveConfig, ResponsiveOverride } from "./types";
 
 export function parseObject(value: string | null | undefined): Record<string, any> {
   if (!value) return {};
@@ -84,4 +84,93 @@ export function toPatch(website: import("@/types").Website) {
 
 export function slugify(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
+/* ── Responsive Helpers ────────────────────────────────────── */
+
+export function getResponsiveConfig(styleConfig: string | null | undefined): ResponsiveConfig {
+  const parsed = parseObject(styleConfig);
+  return parsed.responsive || {};
+}
+
+export function setResponsiveConfig(
+  styleConfig: string | null | undefined,
+  device: Exclude<DeviceMode, "desktop">,
+  overrides: Partial<ResponsiveOverride> | null
+): string {
+  const parsed = parseObject(styleConfig);
+  const responsive = parsed.responsive || {};
+  if (overrides === null || Object.keys(overrides).length === 0) {
+    delete responsive[device];
+  } else {
+    responsive[device] = overrides;
+  }
+  parsed.responsive = responsive;
+  return JSON.stringify(parsed);
+}
+
+export function getResponsiveValue<T extends keyof ResponsiveOverride>(
+  responsive: ResponsiveConfig,
+  device: DeviceMode,
+  property: T,
+  defaultValue: ResponsiveOverride[T]
+): ResponsiveOverride[T] {
+  if (device === "desktop") return defaultValue;
+  if (device === "tablet") {
+    if (responsive.tablet?.[property] !== undefined) return responsive.tablet[property] as ResponsiveOverride[T];
+    return defaultValue;
+  }
+  if (device === "mobile") {
+    if (responsive.mobile?.[property] !== undefined) return responsive.mobile[property] as ResponsiveOverride[T];
+    if (responsive.tablet?.[property] !== undefined) return responsive.tablet[property] as ResponsiveOverride[T];
+    return defaultValue;
+  }
+  return defaultValue;
+}
+
+export function getEffectiveStyle(
+  responsive: ResponsiveConfig,
+  device: DeviceMode,
+  baseStyle: Record<string, any>
+): Record<string, any> {
+  if (device === "desktop") return baseStyle;
+  const overrides: Record<string, any> = {};
+  const tablet = responsive.tablet || {};
+  const mobile = responsive.mobile || {};
+  const source = device === "mobile" ? { ...tablet, ...mobile } : tablet;
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && value !== null) {
+      overrides[key] = value;
+    }
+  }
+  return { ...baseStyle, ...overrides };
+}
+
+export function hasResponsiveOverride(
+  responsive: ResponsiveConfig,
+  device: DeviceMode,
+  property: keyof ResponsiveOverride
+): boolean {
+  if (device === "desktop") return false;
+  if (device === "mobile" && responsive.mobile?.[property] !== undefined) return true;
+  if (responsive.tablet?.[property] !== undefined) return true;
+  return false;
+}
+
+export function clearResponsiveOverride(
+  responsive: ResponsiveConfig,
+  device: Exclude<DeviceMode, "desktop">,
+  property: keyof ResponsiveOverride
+): ResponsiveConfig {
+  const result = { ...responsive };
+  if (result[device]) {
+    const deviceCopy = { ...result[device] };
+    delete deviceCopy[property];
+    if (Object.keys(deviceCopy).length === 0) {
+      delete result[device];
+    } else {
+      result[device] = deviceCopy;
+    }
+  }
+  return result;
 }

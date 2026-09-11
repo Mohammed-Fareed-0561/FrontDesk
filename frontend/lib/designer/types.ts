@@ -4,6 +4,28 @@ export type DesignerLeftTab = "add" | "sections" | "elements" | "templates" | "u
 
 export type DeviceMode = "desktop" | "tablet" | "mobile";
 
+export interface ResponsiveOverride {
+  fontSize?: number;
+  lineHeight?: number;
+  alignment?: "left" | "center" | "right";
+  columns?: number;
+  direction?: "row" | "column";
+  gap?: string;
+  padding?: string;
+  margin?: string;
+  width?: string;
+  visible?: boolean;
+  objectFit?: "cover" | "contain" | "fill";
+  objectPosition?: string;
+  buttonWidth?: "auto" | "full";
+  buttonSize?: "sm" | "md" | "lg";
+}
+
+export type ResponsiveConfig = {
+  tablet?: Partial<ResponsiveOverride>;
+  mobile?: Partial<ResponsiveOverride>;
+};
+
 export type SelectionType = "component" | "section" | null;
 
 export interface DesignerSelection {
