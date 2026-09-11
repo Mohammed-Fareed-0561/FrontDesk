@@ -12,13 +12,14 @@ import { Separator } from "@/components/ui/separator";
 import { apiClient } from "@/lib/api/client";
 import type { Business } from "@/types";
 import { useToast } from "@/components/ui/use-toast";
-import { useBusiness } from "@/hooks/useBusiness";
-import { Building2, MapPin, Phone, Mail, Globe, Clock, Save, Plus } from "lucide-react";
+import { useBusinessContext } from "@/providers/BusinessProvider";
+import { ALL_BUSINESS_TYPES, BUSINESS_TYPE_LABELS } from "@/config/business";
+import { Building2, MapPin, Phone, Mail, Globe, Save, Plus } from "lucide-react";
 import Link from "next/link";
 
 export default function BusinessPage() {
   const { toast } = useToast();
-  const { businesses, selected, selectedId, selectBusiness, loading: bizLoading } = useBusiness();
+  const { businesses, selected, selectedId, selectBusiness, loading: bizLoading } = useBusinessContext();
   const [form, setForm] = useState({ name: "", description: "", businessType: "", industry: "", phone: "", email: "", websiteUrl: "" });
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -85,20 +86,25 @@ export default function BusinessPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5" /> Create business</CardTitle>
-            <CardDescription>We’ll set up a workspace and a starter website for you.</CardDescription>
+            <CardDescription>We&apos;ll set up a workspace and a starter website for you.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2"><Label>Business name *</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="Royal Bakes" /></div>
-                <div className="space-y-2"><Label>Business type</Label><Input value={form.businessType} onChange={(e) => setForm({ ...form, businessType: e.target.value })} placeholder="bakery, cafe, boutique" /></div>
+                <div className="space-y-2"><Label>Business type</Label>
+                  <select value={form.businessType} onChange={(e) => setForm({ ...form, businessType: e.target.value })} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                    <option value="">Select type...</option>
+                    {ALL_BUSINESS_TYPES.map((t: string) => <option key={t} value={t}>{BUSINESS_TYPE_LABELS[t]}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What do customers love about you?" /></div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2"><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+91 ..." /></div>
                 <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="hello@..." /></div>
               </div>
-              <Button type="submit" disabled={creating}>{creating ? "Creating…" : "Create business"}</Button>
+              <Button type="submit" disabled={creating}>{creating ? "Creating..." : "Create business"}</Button>
             </form>
           </CardContent>
         </Card>
@@ -111,7 +117,7 @@ export default function BusinessPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Business</h1>
-          <p className="text-muted-foreground">Your business profile — what customers see.</p>
+          <p className="text-muted-foreground">Your business profile - what customers see.</p>
         </div>
         {businesses.length > 1 && (
           <div className="flex items-center gap-2">
@@ -128,13 +134,18 @@ export default function BusinessPage() {
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>Business information</CardTitle>
-              <CardDescription>Keep this accurate — it powers your website, QR and WhatsApp.</CardDescription>
+              <CardDescription>Keep this accurate - it powers your website, QR and WhatsApp.</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSave} className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2"><Label>Business name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-                  <div className="space-y-2"><Label>Type</Label><Input value={form.businessType} onChange={(e) => setForm({ ...form, businessType: e.target.value })} /></div>
+                  <div className="space-y-2"><Label>Type</Label>
+                    <select value={form.businessType} onChange={(e) => setForm({ ...form, businessType: e.target.value })} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                      <option value="">Select type...</option>
+                      {ALL_BUSINESS_TYPES.map((t: string) => <option key={t} value={t}>{BUSINESS_TYPE_LABELS[t]}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -146,7 +157,7 @@ export default function BusinessPage() {
                   <div className="space-y-2"><Label>Website URL</Label><Input value={form.websiteUrl} onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })} placeholder="https://..." /></div>
                 </div>
                 <div className="flex gap-2">
-                  <Button type="submit" disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Saving…" : "Save changes"}</Button>
+                  <Button type="submit" disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Saving..." : "Save changes"}</Button>
                   <Button type="button" variant="outline" asChild><Link href="/dashboard/importer">Import data</Link></Button>
                 </div>
               </form>
@@ -157,7 +168,7 @@ export default function BusinessPage() {
             <Card>
               <CardHeader><CardTitle className="text-base">At a glance</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
-                <div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{selected.name} <Badge variant="outline" className="ml-auto">{selected.businessType || "business"}</Badge></div>
+                <div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{selected.name} <Badge variant="outline" className="ml-auto">{BUSINESS_TYPE_LABELS[selected.businessType || "other"] || selected.businessType || "business"}</Badge></div>
                 <div className="flex items-center gap-2"><Phone className="h-4 w-4 text-muted-foreground" />{selected.phone || "Add phone"}</div>
                 <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-muted-foreground" />{selected.email || "Add email"}</div>
                 <div className="flex items-center gap-2"><Globe className="h-4 w-4 text-muted-foreground" /><span className="truncate">{selected.websiteUrl || "No website URL"}</span></div>
@@ -172,7 +183,7 @@ export default function BusinessPage() {
               <CardContent className="space-y-2 text-sm">
                 <Link href="/dashboard/importer" className="flex items-center justify-between rounded-md border p-3 hover:bg-muted"><span>Import your menu / catalog</span><Plus className="h-4 w-4" /></Link>
                 <Link href="/dashboard/catalog" className="flex items-center justify-between rounded-md border p-3 hover:bg-muted"><span>Review products</span><Plus className="h-4 w-4" /></Link>
-                <Link href="/dashboard/website" className="flex items-center justify-between rounded-md border p-3 hover:bg-muted"><span>Preview & publish website</span><Plus className="h-4 w-4" /></Link>
+                <Link href="/dashboard/website" className="flex items-center justify-between rounded-md border p-3 hover:bg-muted"><span>Preview &amp; publish website</span><Plus className="h-4 w-4" /></Link>
               </CardContent>
             </Card>
           </div>

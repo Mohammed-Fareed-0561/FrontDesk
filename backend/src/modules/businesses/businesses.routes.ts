@@ -4,6 +4,7 @@ import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
 import { slugify } from "../../shared/utils/slug.js";
 import { parsePagination } from "../../shared/utils/pagination.js";
+import { getDefaultCapabilities, mapLegacyBusinessType } from "../../shared/config/capabilities.js";
 
 const createBusinessSchema = z.object({
   name: z.string().min(1).max(120),
@@ -84,6 +85,7 @@ export async function businessesRoutes(app: FastifyInstance) {
         phone: data.phone,
         email: data.email,
         websiteUrl: data.websiteUrl,
+        enabledModules: JSON.stringify(getDefaultCapabilities(mapLegacyBusinessType(data.businessType || null))),
         timezone: data.timezone || "Asia/Kolkata",
         currency: data.currency || "INR",
         createdBy: userId,

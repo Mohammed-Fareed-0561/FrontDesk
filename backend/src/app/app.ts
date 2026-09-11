@@ -28,6 +28,7 @@ import { knowledgeRoutes } from "../modules/knowledge/knowledge.routes.js";
 import { insightsRoutes } from "../modules/insights/insights.routes.js";
 import { automationsRoutes } from "../modules/automations/automations.routes.js";
 import { notificationsRoutes } from "../modules/notifications/notifications.routes.js";
+import { capabilitiesRoutes } from "../modules/businesses/capabilities.routes.js";
 import { AppError } from "../shared/errors/AppError.js";
 
 export async function buildApp() {
@@ -78,6 +79,7 @@ export async function buildApp() {
   // routes
   await app.register(authRoutes);
   await app.register(businessesRoutes);
+  await app.register(capabilitiesRoutes);
   await app.register(catalogRoutes);
   await app.register(importerRoutes);
   await app.register(websitesRoutes);

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { NAVIGATION } from "@/config/app";
+import { useBusinessContext } from "@/providers/BusinessProvider";
+import { getNavigationForCapabilities, type Capability } from "@/config/business";
 import {
   Home,
   Package,
@@ -23,6 +24,10 @@ import {
   Menu,
   FileText,
   LifeBuoy,
+  Users,
+  Target,
+  CreditCard,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
@@ -30,6 +35,7 @@ import { useAuth } from "@/providers/AuthProvider";
 
 const iconMap: Record<string, React.ElementType> = {
   Dashboard: Home,
+  Home: Home,
   Catalog: Package,
   Orders: ShoppingBag,
   Bookings: Calendar,
@@ -45,11 +51,21 @@ const iconMap: Record<string, React.ElementType> = {
   Activity: BarChart3,
   Settings: Settings,
   Business: FileText,
+  Customers: Users,
+  Leads: Target,
+  Payments: CreditCard,
+  Services: Layers,
+  Menu: BookOpen,
 };
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { logout } = useAuth();
+  const { capabilities } = useBusinessContext();
+
+  const navItems = capabilities
+    ? getNavigationForCapabilities(capabilities.enabledModules)
+    : getNavigationForCapabilities([]);
 
   return (
     <>
@@ -59,8 +75,8 @@ export default function Sidebar() {
         </div>
         <nav className="flex-1 overflow-y-auto py-4">
           <ul className="space-y-1 px-2">
-            {NAVIGATION.dashboard.map((item) => {
-              const Icon = iconMap[item.label] || Home;
+            {navItems.map((item) => {
+              const Icon = iconMap[item.icon] || Home;
               const href = item.href;
               const isActive = pathname === href;
               return (
@@ -103,6 +119,11 @@ export default function Sidebar() {
 
 function MobileSidebar() {
   const pathname = usePathname();
+  const { capabilities } = useBusinessContext();
+
+  const navItems = capabilities
+    ? getNavigationForCapabilities(capabilities.enabledModules)
+    : getNavigationForCapabilities([]);
 
   return (
     <div className="md:hidden">
@@ -114,8 +135,8 @@ function MobileSidebar() {
         </SheetTrigger>
         <SheetContent side="left" className="w-64">
           <div className="mt-8 flex flex-col space-y-1">
-            {NAVIGATION.dashboard.map((item) => {
-              const Icon = iconMap[item.label] || Home;
+            {navItems.map((item) => {
+              const Icon = iconMap[item.icon] || Home;
               const isActive = pathname === item.href;
               return (
                 <Link

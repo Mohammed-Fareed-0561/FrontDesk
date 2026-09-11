@@ -3,6 +3,19 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+function getDefaultEnabledModules(businessType: string | null): string[] {
+  const profiles: Record<string, string[]> = {
+    restaurant: ["website", "menu", "orders", "bookings", "customers", "inbox", "insights"],
+    cafe: ["website", "menu", "orders", "bookings", "customers", "inbox", "insights"],
+    bakery: ["website", "catalog", "orders", "bookings", "customers", "inbox", "insights"],
+    salon: ["website", "services", "bookings", "customers", "inbox", "insights"],
+    retail: ["website", "catalog", "orders", "customers", "inbox", "insights"],
+    freelancer: ["website", "services", "leads", "customers", "inbox", "insights"],
+    other: ["website", "customers", "inbox", "insights"],
+  };
+  return profiles[businessType || "other"] || profiles.other;
+}
+
 async function main() {
   console.log("🌱 Seeding FrontDesk...");
 
@@ -41,6 +54,7 @@ async function main() {
       slug: "royal-bakes",
       description: "Artisan bakery in Chennai — cakes, breads, and pastries baked fresh daily.",
       businessType: "bakery",
+      enabledModules: JSON.stringify(getDefaultEnabledModules("bakery")),
       industry: "Food & Beverage",
       phone: "+91 98765 43210",
       email: "hello@royalbakes.test",
@@ -52,7 +66,7 @@ async function main() {
     }
   }).catch(async () => {
     let b = await prisma.business.findFirst({ where: { workspaceId: workspace.id, slug: "royal-bakes" } });
-    if (!b) b = await prisma.business.create({ data: { workspaceId: workspace.id, name: "Royal Bakes", slug: "royal-bakes", description: "Artisan bakery — Chennai", businessType: "bakery", phone: "+91 98765 43210", email: "hello@royalbakes.test", timezone: "Asia/Kolkata", currency: "INR", createdBy: user.id } });
+    if (!b) b = await prisma.business.create({ data: { workspaceId: workspace.id, name: "Royal Bakes", slug: "royal-bakes", description: "Artisan bakery — Chennai", businessType: "bakery", enabledModules: JSON.stringify(getDefaultEnabledModules("bakery")), phone: "+91 98765 43210", email: "hello@royalbakes.test", timezone: "Asia/Kolkata", currency: "INR", createdBy: user.id } });
     return b;
   });
 

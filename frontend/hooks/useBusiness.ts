@@ -1,10 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
 import { apiClient } from "@/lib/api/client";
 import type { Business } from "@/types";
+import { BusinessContext } from "@/providers/BusinessProvider";
 
 export function useBusiness() {
+  const ctx = useContext(BusinessContext);
+  if (ctx) {
+    return {
+      businesses: ctx.businesses,
+      selected: ctx.selected,
+      selectedId: ctx.selectedId,
+      selectBusiness: ctx.selectBusiness,
+      loading: ctx.loading,
+      error: ctx.error,
+      refresh: ctx.refresh,
+    };
+  }
+
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

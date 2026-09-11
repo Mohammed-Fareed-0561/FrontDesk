@@ -3,31 +3,40 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/providers/AuthProvider";
-import { useBusiness } from "@/hooks/useBusiness";
+import { useBusinessContext } from "@/providers/BusinessProvider";
 import { apiClient } from "@/lib/api/client";
 import { useToast } from "@/components/ui/use-toast";
 import type { BusinessMemory } from "@/types";
-import { Shield, User, Building2, Bell, Key, LogOut, Brain, Trash2, Plus } from "lucide-react";
+import { CAPABILITY_LABELS, CAPABILITY_DESCRIPTIONS, type Capability } from "@/config/business";
+import { Shield, User, Building2, Bell, Key, LogOut, Brain, Trash2, Plus, Puzzle } from "lucide-react";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const { user, logout } = useAuth();
-  const { selectedId } = useBusiness();
+  const { selectedId, capabilities } = useBusinessContext();
   const businessId = selectedId;
   const [memories, setMemories] = useState<BusinessMemory[]>([]);
   const [newMemory, setNewMemory] = useState("");
   const [newMemoryType, setNewMemoryType] = useState("business_rule");
+  const [enabledModules, setEnabledModules] = useState<string[]>([]);
+  const [savingFeatures, setSavingFeatures] = useState(false);
 
   useEffect(() => {
     if (!businessId) return;
     apiClient<BusinessMemory[]>(`/businesses/${businessId}/memory`).then(setMemories).catch(() => {});
   }, [businessId]);
+
+  useEffect(() => {
+    if (capabilities) {
+      setEnabledModules(capabilities.enabledModules);
+    }
+  }, [capabilities]);
 
   const handleAddMemory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,11 +62,36 @@ export default function SettingsPage() {
     }
   };
 
+  const toggleCapability = async (cap: Capability) => {
+    if (!businessId || !capabilities) return;
+    const newModules = enabledModules.includes(cap)
+      ? enabledModules.filter((m) => m !== cap)
+      : [...enabledModules, cap];
+    setEnabledModules(newModules);
+    setSavingFeatures(true);
+    try {
+      await apiClient(`/businesses/${businessId}/capabilities`, {
+        method: "PATCH",
+        body: { enabledModules: newModules },
+      });
+      toast({ title: "Features updated" });
+    } catch (err: any) {
+      setEnabledModules(capabilities.enabledModules);
+      toast({ title: "Could not update features", description: err.message });
+    } finally {
+      setSavingFeatures(false);
+    }
+  };
+
+  const availableCapabilities = capabilities
+    ? [...capabilities.profile.recommended, ...capabilities.profile.optional]
+    : [];
+
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">Account, business memory and safety. Simple, not enterprise-complex.</p>
+        <p className="text-muted-foreground">Account, business features, memory and safety.</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -72,7 +106,39 @@ export default function SettingsPage() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><Brain className="h-4 w-4" /> Business Memory</CardTitle><CardDescription>Teach FrontDesk how you work. Copilot will follow these — e.g. language, discount rules, tone.</CardDescription></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Puzzle className="h-4 w-4" /> Business Features</CardTitle>
+              <CardDescription>Choose which features are active for your business. Turn on what you need, turn off what you don&apos;t.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {capabilities && (
+                <div className="rounded-md bg-muted p-3 text-sm">
+                  <span className="font-medium">{capabilities.profile.label}</span> business profile &middot; {enabledModules.length} features active
+                </div>
+              )}
+              <div className="space-y-3">
+                {availableCapabilities.map((cap) => (
+                  <div key={cap} className="flex items-center justify-between rounded-md border p-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium">{CAPABILITY_LABELS[cap] || cap}</div>
+                      <div className="text-xs text-muted-foreground">{CAPABILITY_DESCRIPTIONS[cap] || ""}</div>
+                    </div>
+                    <Switch
+                      checked={enabledModules.includes(cap)}
+                      onCheckedChange={() => toggleCapability(cap)}
+                      disabled={savingFeatures || capabilities?.profile.recommended.includes(cap)}
+                    />
+                  </div>
+                ))}
+              </div>
+              {capabilities?.profile.recommended && (
+                <p className="text-xs text-muted-foreground">Recommended features for your business type are always on.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><Brain className="h-4 w-4" /> Business Memory</CardTitle><CardDescription>Teach FrontDesk how you work. Copilot will follow these - e.g. language, discount rules, tone.</CardDescription></CardHeader>
             <CardContent className="space-y-4">
               <form onSubmit={handleAddMemory} className="space-y-3">
                 <div className="grid gap-2">
@@ -91,7 +157,7 @@ export default function SettingsPage() {
               </form>
               <Separator />
               <div className="space-y-2">
-                {memories.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No memories yet. Add one — it helps Copilot be accurate.</p> : memories.map((m) => (
+                {memories.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No memories yet. Add one - it helps Copilot be accurate.</p> : memories.map((m) => (
                   <div key={m.id} className="flex items-start justify-between rounded-md border p-3">
                     <div className="min-w-0"><div className="text-sm">{m.content}</div><div className="mt-1 flex gap-2"><Badge variant="outline">{m.memoryType}</Badge><span className="text-xs text-muted-foreground">{m.source} · {new Date(m.createdAt).toLocaleDateString("en-IN")}</span></div></div>
                     <Button size="sm" variant="ghost" onClick={() => handleDeleteMemory(m.id)}><Trash2 className="h-4 w-4" /></Button>
@@ -106,7 +172,7 @@ export default function SettingsPage() {
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Shield className="h-4 w-4" /> Safety</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="rounded-md bg-muted p-3">Business data is the source of truth — AI only proposes, you approve. High-impact actions (price changes, deletes) need approval.</div>
+              <div className="rounded-md bg-muted p-3">Business data is the source of truth - AI only proposes, you approve. High-impact actions (price changes, deletes) need approval.</div>
               <div className="flex items-center gap-2 text-muted-foreground"><Key className="h-4 w-4" /> JWT auth, tenant isolation, Zod validation</div>
             </CardContent>
           </Card>
@@ -116,7 +182,7 @@ export default function SettingsPage() {
           </Card>
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Bell className="h-4 w-4" /> Notifications</CardTitle></CardHeader>
-            <CardContent className="text-sm text-muted-foreground">In-app toasts for now. Email/WhatsApp notifications behind provider abstraction — add when needed.</CardContent>
+            <CardContent className="text-sm text-muted-foreground">In-app toasts for now. Email/WhatsApp notifications behind provider abstraction - add when needed.</CardContent>
           </Card>
           <Card className="border-destructive/20">
             <CardHeader><CardTitle className="text-destructive text-base">Danger zone</CardTitle></CardHeader>

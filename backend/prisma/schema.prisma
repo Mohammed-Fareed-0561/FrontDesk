@@ -105,13 +105,14 @@ model Business {
   name         String
   slug         String
   description  String?
-  businessType String?  @map("business_type")
-  industry     String?
-  phone        String?
-  email        String?
-  websiteUrl   String?  @map("website_url")
-  logoMediaId  String?  @map("logo_media_id")
-  status       String   @default("active")
+  businessType  String?  @map("business_type")
+  industry      String?
+  phone         String?
+  email         String?
+  websiteUrl    String?  @map("website_url")
+  logoMediaId   String?  @map("logo_media_id")
+  enabledModules String? @map("enabled_modules")
+  status        String   @default("active")
   timezone     String   @default("Asia/Kolkata")
   currency     String   @default("INR")
   locale       String   @default("en-IN")

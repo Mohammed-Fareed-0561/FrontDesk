@@ -52,6 +52,7 @@ export type Business = {
   phone: string | null;
   email: string | null;
   websiteUrl: string | null;
+  enabledModules: string | null;
   status: string;
   timezone: string;
   currency: string;
