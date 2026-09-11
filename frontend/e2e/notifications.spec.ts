@@ -248,8 +248,8 @@ test.describe("Notifications — UI Navigation", () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 10000 });
 
     await page.goto("/dashboard/notifications");
-    await expect(page.getByText("Notifications")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("View all notifications", { exact: false })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Stay informed", { exact: false })).toBeVisible({ timeout: 10000 });
   });
 
   test("notifications page shows empty state", async ({ page }) => {
@@ -260,7 +260,7 @@ test.describe("Notifications — UI Navigation", () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 10000 });
 
     await page.goto("/dashboard/notifications");
-    await expect(page.getByText("Notifications")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible({ timeout: 10000 });
     // Empty state or notification list should be visible
     await expect(page.getByText(/No notifications|unread/)).toBeVisible({ timeout: 10000 });
   });
@@ -273,7 +273,7 @@ test.describe("Notifications — UI Navigation", () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 10000 });
 
     await page.goto("/dashboard/notifications");
-    await expect(page.getByText("Notifications")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible({ timeout: 10000 });
 
     const readTimestamps = page.locator('[aria-label^="Read "]');
     const count = await readTimestamps.count();

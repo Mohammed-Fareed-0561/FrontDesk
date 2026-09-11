@@ -145,17 +145,133 @@ export async function businessesRoutes(app: FastifyInstance) {
     const { businessId } = request.params as any;
     const schema = createBusinessSchema.partial();
     const parsed = schema.safeParse(request.body);
-    if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid", details: parsed.error.flatten() });
+    if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid business data", details: parsed.error.flatten() });
     const business = await prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw Errors.notFound("Business");
     const member = await prisma.workspaceMember.findFirst({ where: { userId, workspaceId: business.workspaceId } });
     const ws = await prisma.workspace.findFirst({ where: { id: business.workspaceId, ownerUserId: userId } });
     if (!member && !ws) throw Errors.forbidden();
     const before = { ...business };
-    const updated = await prisma.business.update({ where: { id: businessId }, data: { ...parsed.data, updatedAt: new Date() } as any });
-    await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "BUSINESS_UPDATED", entityType: "business", entityId: businessId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) } });
+    
+    const { address, ...directFields } = parsed.data;
+    const updated = await prisma.business.update({ where: { id: businessId }, data: { ...directFields, updatedAt: new Date() } as any });
+    
+    if (address) {
+      const primaryLoc = await prisma.businessLocation.findFirst({ where: { businessId, isPrimary: true } });
+      if (primaryLoc) {
+        await prisma.businessLocation.update({
+          where: { id: primaryLoc.id },
+          data: {
+            addressLine1: address.addressLine1,
+            city: address.city,
+            state: address.state,
+            postalCode: address.postalCode,
+            country: address.country || "IN",
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        await prisma.businessLocation.create({
+          data: {
+            businessId,
+            addressLine1: address.addressLine1,
+            city: address.city,
+            state: address.state,
+            postalCode: address.postalCode,
+            country: address.country || "IN",
+            isPrimary: true,
+          },
+        });
+      }
+    }
+
+    const fullUpdated = await prisma.business.findUnique({ where: { id: businessId }, include: { locations: true, hours: true } });
+    await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "BUSINESS_UPDATED", entityType: "business", entityId: businessId, beforeData: JSON.stringify(before), afterData: JSON.stringify(fullUpdated) } });
     await prisma.domainEvent.create({ data: { businessId, eventType: "BUSINESS_UPDATED", aggregateType: "business", aggregateId: businessId, payload: JSON.stringify({ businessId }) } });
-    return reply.send({ success: true, data: updated });
+    return reply.send({ success: true, data: fullUpdated });
+  });
+
+  // Dedicated PUT route for operating hours
+  app.put("/api/v1/businesses/:businessId/hours", { preHandler: [(app as any).authenticate] }, async (request, reply) => {
+    const userId = (request as any).userId as string;
+    const { businessId } = request.params as any;
+    const business = await prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw Errors.notFound("Business");
+    const member = await prisma.workspaceMember.findFirst({ where: { userId, workspaceId: business.workspaceId } });
+    const ws = await prisma.workspace.findFirst({ where: { id: business.workspaceId, ownerUserId: userId } });
+    if (!member && !ws) throw Errors.forbidden();
+
+    const hoursSchema = z.object({
+      hours: z.array(
+        z.object({
+          dayOfWeek: z.number().min(0).max(6),
+          openTime: z.string().nullable().optional(),
+          closeTime: z.string().nullable().optional(),
+          isClosed: z.boolean(),
+        })
+      ),
+    });
+
+    const parsed = hoursSchema.safeParse(request.body);
+    if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid hours format", details: parsed.error.flatten() });
+
+    await prisma.businessHours.deleteMany({ where: { businessId } });
+    await prisma.businessHours.createMany({
+      data: parsed.data.hours.map((h) => ({
+        businessId,
+        dayOfWeek: h.dayOfWeek,
+        openTime: h.openTime || null,
+        closeTime: h.closeTime || null,
+        isClosed: h.isClosed,
+      })),
+    });
+
+    const updatedHours = await prisma.businessHours.findMany({ where: { businessId }, orderBy: { dayOfWeek: "asc" } });
+    return reply.send({ success: true, data: updatedHours });
+  });
+
+  // Dedicated PUT route for primary location
+  app.put("/api/v1/businesses/:businessId/location", { preHandler: [(app as any).authenticate] }, async (request, reply) => {
+    const userId = (request as any).userId as string;
+    const { businessId } = request.params as any;
+    const business = await prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw Errors.notFound("Business");
+    const member = await prisma.workspaceMember.findFirst({ where: { userId, workspaceId: business.workspaceId } });
+    const ws = await prisma.workspace.findFirst({ where: { id: business.workspaceId, ownerUserId: userId } });
+    if (!member && !ws) throw Errors.forbidden();
+
+    const locSchema = z.object({
+      addressLine1: z.string().optional(),
+      addressLine2: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      postalCode: z.string().optional(),
+      country: z.string().optional(),
+      phone: z.string().optional(),
+    });
+
+    const parsed = locSchema.safeParse(request.body);
+    if (!parsed.success) throw new AppError({ statusCode: 422, code: "VALIDATION_ERROR", message: "Invalid location data", details: parsed.error.flatten() });
+
+    const primaryLoc = await prisma.businessLocation.findFirst({ where: { businessId, isPrimary: true } });
+    let loc;
+    if (primaryLoc) {
+      loc = await prisma.businessLocation.update({
+        where: { id: primaryLoc.id },
+        data: { ...parsed.data, updatedAt: new Date() },
+      });
+    } else {
+      loc = await prisma.businessLocation.create({
+        data: {
+          businessId,
+          ...parsed.data,
+          country: parsed.data.country || "IN",
+          isPrimary: true,
+        },
+      });
+    }
+
+    return reply.send({ success: true, data: loc });
   });
 
   // Mark onboarding as complete

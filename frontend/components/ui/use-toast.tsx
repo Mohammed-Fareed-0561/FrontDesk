@@ -17,6 +17,7 @@ export type ToastOptions = {
   description?: string;
   action?: React.ReactNode;
   duration?: number;
+  variant?: string;
 };
 
 const ToastContext = createContext<{

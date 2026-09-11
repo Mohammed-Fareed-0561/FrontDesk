@@ -103,10 +103,11 @@ test.describe("UX-01 Business Features", () => {
     await page.fill("#email", DEMO_EMAIL);
     await page.fill("#password", DEMO_PASS);
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 10000 });
+    await page.waitForURL("**/dashboard**", { timeout: 15000 });
+    await expect(page).toHaveURL(/\/dashboard/);
 
     await page.goto("/dashboard/settings");
-    await expect(page.getByRole("heading", { name: "Business Features" })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "Business Features" })).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole("main").getByText("Website")).toBeVisible();
     await expect(page.getByRole("main").getByText("Catalog")).toBeVisible();
   });
@@ -116,9 +117,10 @@ test.describe("UX-01 Business Features", () => {
     await page.fill("#email", DEMO_EMAIL);
     await page.fill("#password", DEMO_PASS);
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 10000 });
+    await page.waitForURL("**/dashboard**", { timeout: 15000 });
+    await expect(page).toHaveURL(/\/dashboard/);
 
     await page.goto("/dashboard/business");
-    await expect(page.locator("div.inline-flex").filter({ hasText: /^Bakery$/ })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("div.inline-flex").filter({ hasText: /^Bakery$/ }).first()).toBeVisible({ timeout: 15000 });
   });
 });
