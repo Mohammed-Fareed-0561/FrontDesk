@@ -4,7 +4,7 @@ import { prisma } from "../../infrastructure/database/client.js";
 import { AppError, Errors } from "../../shared/errors/AppError.js";
 import { slugify } from "../../shared/utils/slug.js";
 import { parsePagination } from "../../shared/utils/pagination.js";
-import { getDefaultCapabilities, mapLegacyBusinessType } from "../../shared/config/capabilities.js";
+import { getDefaultCapabilities, mapLegacyBusinessType, ALL_CAPABILITIES } from "../../shared/config/capabilities.js";
 
 const createBusinessSchema = z.object({
   name: z.string().min(1).max(120),
@@ -16,6 +16,7 @@ const createBusinessSchema = z.object({
   websiteUrl: z.string().url().optional().or(z.literal("").transform(() => undefined)),
   timezone: z.string().optional(),
   currency: z.string().optional(),
+  enabledModules: z.array(z.string()).optional(),
   address: z.object({
     addressLine1: z.string().optional(),
     city: z.string().optional(),
@@ -85,7 +86,11 @@ export async function businessesRoutes(app: FastifyInstance) {
         phone: data.phone,
         email: data.email,
         websiteUrl: data.websiteUrl,
-        enabledModules: JSON.stringify(getDefaultCapabilities(mapLegacyBusinessType(data.businessType || null))),
+        enabledModules: JSON.stringify(
+          data.enabledModules && data.enabledModules.length > 0
+            ? data.enabledModules.filter((m: string) => ALL_CAPABILITIES.includes(m as any))
+            : getDefaultCapabilities(mapLegacyBusinessType(data.businessType || null))
+        ),
         timezone: data.timezone || "Asia/Kolkata",
         currency: data.currency || "INR",
         createdBy: userId,
@@ -151,6 +156,20 @@ export async function businessesRoutes(app: FastifyInstance) {
     await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "BUSINESS_UPDATED", entityType: "business", entityId: businessId, beforeData: JSON.stringify(before), afterData: JSON.stringify(updated) } });
     await prisma.domainEvent.create({ data: { businessId, eventType: "BUSINESS_UPDATED", aggregateType: "business", aggregateId: businessId, payload: JSON.stringify({ businessId }) } });
     return reply.send({ success: true, data: updated });
+  });
+
+  // Mark onboarding as complete
+  app.patch("/api/v1/businesses/:businessId/complete-setup", { preHandler: [(app as any).authenticate] }, async (request, reply) => {
+    const userId = (request as any).userId as string;
+    const { businessId } = request.params as any;
+    const business = await prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw Errors.notFound("Business");
+    const member = await prisma.workspaceMember.findFirst({ where: { userId, workspaceId: business.workspaceId } });
+    const ws = await prisma.workspace.findFirst({ where: { id: business.workspaceId, ownerUserId: userId } });
+    if (!member && !ws) throw Errors.forbidden();
+    const updated = await prisma.business.update({ where: { id: businessId }, data: { setupComplete: true, updatedAt: new Date() } });
+    await prisma.auditLog.create({ data: { businessId, actorType: "user", actorId: userId, action: "ONBOARDING_COMPLETED", entityType: "business", entityId: businessId } });
+    return reply.send({ success: true, data: { setupComplete: true } });
   });
 
   // public endpoint

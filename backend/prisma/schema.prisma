@@ -112,6 +112,7 @@ model Business {
   websiteUrl    String?  @map("website_url")
   logoMediaId   String?  @map("logo_media_id")
   enabledModules String? @map("enabled_modules")
+  setupComplete  Boolean @default(false) @map("setup_complete")
   status        String   @default("active")
   timezone     String   @default("Asia/Kolkata")
   currency     String   @default("INR")

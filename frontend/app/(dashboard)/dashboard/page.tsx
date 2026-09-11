@@ -9,14 +9,23 @@ import { Package, Globe, Inbox, Banknote, Upload, FileText, ArrowRight, CheckCir
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
 import type { AnalyticsOverview } from "@/types";
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
-  const { selected, selectedId, businesses } = useBusiness();
+  const { selected, selectedId, businesses, loading: bizLoading } = useBusiness();
+  const router = useRouter();
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Redirect to onboarding if no businesses
+  useEffect(() => {
+    if (!authLoading && !bizLoading && businesses.length === 0) {
+      router.push("/onboarding");
+    }
+  }, [authLoading, bizLoading, businesses, router]);
 
   useEffect(() => {
     if (!selectedId) return;

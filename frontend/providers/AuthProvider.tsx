@@ -51,14 +51,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const session = await loginApi(email, password);
     setUser(session.user);
     setToken(session.token);
-    router.push("/dashboard");
+    // Check if user has any businesses to decide redirect
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
+      const res = await fetch(`${baseUrl}/businesses`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      const data = await res.json();
+      const businesses = data?.data || [];
+      if (businesses.length === 0) {
+        router.push("/onboarding");
+      } else {
+        router.push("/dashboard");
+      }
+    } catch {
+      router.push("/dashboard");
+    }
   };
 
   const signup = async (email: string, password: string, displayName?: string) => {
     const session = await signupApi(email, password, displayName);
     setUser(session.user);
     setToken(session.token);
-    router.push("/dashboard");
+    // New users always go to onboarding
+    router.push("/onboarding");
   };
 
   const logout = () => {
