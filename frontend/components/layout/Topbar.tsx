@@ -76,7 +76,7 @@ export function Topbar() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="flex items-center gap-2 px-2 hover:bg-accent/60">
+            <Button variant="ghost" size="sm" className="flex items-center gap-2 px-2 hover:bg-accent/60" aria-label="User profile menu">
               <Avatar className="h-7 w-7 border">
                 <AvatarImage src={user?.avatarUrl || ""} />
                 <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">

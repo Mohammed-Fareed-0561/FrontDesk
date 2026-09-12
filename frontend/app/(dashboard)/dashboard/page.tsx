@@ -1,179 +1,323 @@
 "use client";
 
+/**
+ * UX-IMPLEMENTATION-02 — Business Dashboard & Insights Experience
+ *
+ * This page replaces the previous dashboard with a business-owner command center.
+ *
+ * Data sources (real data only, no fabricated values):
+ *   - /api/v1/businesses/:id/analytics/overview  → counts, financials, website, recentEvents
+ *   - /api/v1/businesses/:id/orders?status=pending → pending order count
+ *   - /api/v1/businesses/:id/bookings?status=pending → pending booking count
+ *   - BusinessProvider → capabilities, hasCapability
+ *
+ * Tenant isolation: each API call scopes data to selectedId resolved from the
+ * workspace-validated backend. Business switching re-fetches all data.
+ *
+ * Business types: restaurant/cafe/bakery/salon/barbershop/clinic/retail/
+ *                 ecommerce/agency/freelancer/consultant/education/
+ *                 real_estate/service_business/portfolio/other
+ */
+
 import { useAuth } from "@/providers/AuthProvider";
-import { useBusiness } from "@/hooks/useBusiness";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Package, Globe, Inbox, Banknote, Upload, FileText, ArrowRight, CheckCircle2, AlertCircle, Sparkles } from "lucide-react";
-import Link from "next/link";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useEffect, useState } from "react";
+import { useBusinessContext } from "@/providers/BusinessProvider";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
 import type { AnalyticsOverview } from "@/types";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { AlertCircle, RefreshCw, Building2 } from "lucide-react";
+
+// Dashboard sub-components
+import { DashboardWelcome } from "@/components/dashboard/DashboardWelcome";
+import { AttentionPanel, buildAttentionItems } from "@/components/dashboard/AttentionPanel";
+import { AtGlanceMetrics } from "@/components/dashboard/AtGlanceMetrics";
+import { RecentActivity } from "@/components/dashboard/RecentActivity";
+import { WebsiteStatus } from "@/components/dashboard/WebsiteStatus";
+import { QuickActions } from "@/components/dashboard/QuickActions";
+import { EmptyBusinessState } from "@/components/dashboard/EmptyBusinessState";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface PendingCounts {
+  orders: number;
+  bookings: number;
+}
+
+interface DashboardData {
+  analytics: AnalyticsOverview;
+  pending: PendingCounts;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function safeTotal(meta: any): number {
+  if (!meta) return 0;
+  const n = Number(meta.total);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
-  const { selected, selectedId, businesses, loading: bizLoading } = useBusiness();
+  const {
+    selected,
+    selectedId,
+    businesses,
+    loading: bizLoading,
+    hasCapability,
+    capabilities,
+  } = useBusinessContext();
   const router = useRouter();
-  const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  // Redirect to onboarding if no businesses
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Redirect to onboarding only when we are certain there are no businesses
   useEffect(() => {
     if (!authLoading && !bizLoading && businesses.length === 0) {
       router.push("/onboarding");
     }
   }, [authLoading, bizLoading, businesses, router]);
 
+  const fetchDashboard = useCallback(async (bizId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fire analytics overview request first (primary data source)
+      const analyticsPromise = apiClient<AnalyticsOverview>(
+        `/businesses/${bizId}/analytics/overview`
+      );
+
+      // Conditionally fetch pending orders/bookings based on capabilities.
+      // We hit these here so they load in parallel with analytics.
+      const pendingOrdersPromise = hasCapability("orders")
+        ? apiClient<any>(`/businesses/${bizId}/orders`, {
+            params: { status: "pending", pageSize: 1 },
+          }).then((res) => {
+            // apiClient strips .data, but meta is at top level — use raw
+            return 0; // handled below via apiClientRaw
+          })
+        : Promise.resolve(null);
+
+      const pendingBookingsPromise = hasCapability("bookings")
+        ? apiClient<any>(`/businesses/${bizId}/bookings`, {
+            params: { status: "pending", pageSize: 1 },
+          }).then(() => 0)
+        : Promise.resolve(null);
+
+      // Use raw fetches for pending counts so we can read .meta.total
+      const [analytics, rawOrders, rawBookings] = await Promise.all([
+        analyticsPromise,
+        hasCapability("orders")
+          ? fetch(
+              (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1") +
+                `/businesses/${bizId}/orders?status=pending&pageSize=1`,
+              {
+                headers: {
+                  Authorization: `Bearer ${localStorage.getItem("fd_token") || ""}`,
+                },
+              }
+            )
+              .then((r) => r.json())
+              .catch(() => null)
+          : Promise.resolve(null),
+        hasCapability("bookings")
+          ? fetch(
+              (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1") +
+                `/businesses/${bizId}/bookings?status=pending&pageSize=1`,
+              {
+                headers: {
+                  Authorization: `Bearer ${localStorage.getItem("fd_token") || ""}`,
+                },
+              }
+            )
+              .then((r) => r.json())
+              .catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      const pending: PendingCounts = {
+        orders: rawOrders?.meta ? safeTotal(rawOrders.meta) : 0,
+        bookings: rawBookings?.meta ? safeTotal(rawBookings.meta) : 0,
+      };
+
+      setData({ analytics, pending });
+    } catch (err: any) {
+      setError(err?.message || "Failed to load dashboard data");
+    } finally {
+      setLoading(false);
+    }
+  }, [hasCapability]);
+
   useEffect(() => {
     if (!selectedId) return;
-    (async () => {
-      try {
-        const data = await apiClient<AnalyticsOverview>(`/businesses/${selectedId}/analytics/overview`);
-        setAnalytics(data);
-      } catch {
-        setAnalytics(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [selectedId]);
+    fetchDashboard(selectedId);
+  }, [selectedId, fetchDashboard]);
 
-  if (authLoading) {
+  // ─── Loading skeleton ───────────────────────────────────────────────────────
+
+  if (authLoading || bizLoading) {
     return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <Skeleton className="h-8 w-48" />
+      <div className="space-y-6" aria-label="Loading dashboard" aria-busy="true">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-96" />
+        </div>
+        <Skeleton className="h-16 w-full rounded-xl" />
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-xl" />
+          ))}
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Skeleton className="h-64 lg:col-span-2 rounded-xl" />
+          <Skeleton className="h-64 rounded-xl" />
+        </div>
       </div>
     );
   }
 
-  const setupProgress = () => {
-    if (!analytics) return 40;
-    let done = 0;
-    if (selected) done += 20;
-    if ((analytics.counts.products || 0) > 0) done += 25;
-    if (analytics.website) done += 25;
-    if ((analytics.counts.enquiries || 0) > 0) done += 15;
-    if ((analytics.counts.customers || 0) > 0) done += 15;
-    return Math.min(100, done);
-  };
+  // ─── No businesses ──────────────────────────────────────────────────────────
+  // (will redirect, but render nothing while redirecting)
+  if (!selected && businesses.length === 0) return null;
 
-  const progress = setupProgress();
-  const paidRevenue = new Intl.NumberFormat(selected?.locale || "en-IN", {
-    style: "currency",
-    currency: selected?.currency || "INR",
-    maximumFractionDigits: 2,
-  }).format(analytics?.financials.paidRevenue ?? 0);
+  // ─── Error state ────────────────────────────────────────────────────────────
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Good morning, {selected?.name || user?.displayName || "there"} 👋</h1>
-          <p className="text-muted-foreground">Here’s what needs your attention today.</p>
-        </div>
-        {businesses.length === 0 && !loading && (
-          <Button asChild>
-            <Link href="/dashboard/business">Create your first business <ArrowRight className="ml-2 h-4 w-4" /></Link>
+  if (error && !loading) {
+    return (
+      <div className="space-y-6">
+        <DashboardWelcome
+          user={user}
+          business={selected}
+          profile={capabilities?.profile ?? null}
+        />
+        <Card id="dashboard-error-card">
+          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+            <AlertCircle
+              className="h-8 w-8 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="font-medium">Unable to load dashboard data</p>
+              <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+            </div>
+            <Button
+              id="dashboard-retry-btn"
+              variant="outline"
+              size="sm"
+              onClick={() => selectedId && fetchDashboard(selectedId)}
+              className="gap-1.5"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ─── No business selected ────────────────────────────────────────────────────
+  if (!selected) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="py-10 text-center">
+          <Building2
+            className="mx-auto mb-3 h-8 w-8 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <h2 className="font-semibold">No business selected</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Select a business from the sidebar to view your dashboard.
+          </p>
+          <Button asChild className="mt-4" size="sm">
+            <Link href="/dashboard/business">Manage Businesses</Link>
           </Button>
-        )}
-      </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
-      {/* Setup progress */}
-      {selected && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Setup progress</CardTitle>
-              <Badge variant={progress === 100 ? "success" : "secondary"}>{progress}%</Badge>
-            </div>
-            <CardDescription>{progress === 100 ? "You’re all set — keep your catalog fresh!" : "Complete these steps to go live faster."}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-2 w-full rounded-full bg-muted"><div className="h-2 rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} /></div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3 text-sm">
-              <div className="flex items-center gap-2">{(analytics?.counts.products || 0) > 0 ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertCircle className="h-4 w-4 text-amber-500" />} Catalog {analytics?.counts.products || 0} products</div>
-              <div className="flex items-center gap-2">{analytics?.website?.status === "published" ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertCircle className="h-4 w-4 text-amber-500" />} Website {analytics?.website?.status || "draft"}</div>
-              <div className="flex items-center gap-2">{(analytics?.counts.enquiries || 0) > 0 ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertCircle className="h-4 w-4 text-amber-500" />} {analytics?.counts.newEnquiries || 0} new enquiries</div>
-            </div>
-          </CardContent>
-        </Card>
+  // ─── Compute attention items (only from real data) ───────────────────────────
+  const attentionItems =
+    data?.analytics
+      ? buildAttentionItems(
+          data.analytics,
+          hasCapability,
+          data.pending.orders,
+          data.pending.bookings,
+        )
+      : [];
+
+  // ─── Empty/new business state ────────────────────────────────────────────────
+  const isNewBusiness =
+    !loading &&
+    data &&
+    !selected.setupComplete &&
+    (data.analytics.counts.products ?? 0) === 0 &&
+    (data.analytics.counts.orders ?? 0) === 0 &&
+    (data.analytics.counts.bookings ?? 0) === 0 &&
+    (data.analytics.counts.customers ?? 0) === 0;
+
+  // ─── Full dashboard ──────────────────────────────────────────────────────────
+
+  return (
+    <div
+      id="dashboard-root"
+      className="space-y-6"
+      aria-labelledby="dashboard-heading"
+    >
+      {/* 1. Contextual welcome header */}
+      <DashboardWelcome
+        user={user}
+        business={selected}
+        profile={capabilities?.profile ?? null}
+      />
+
+      {/* 2. New/empty business state */}
+      {isNewBusiness && (
+        <EmptyBusinessState business={selected} hasCapability={hasCapability} />
       )}
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Products" value={loading ? "-" : String(analytics?.counts.products ?? 0)} icon={Package} href="/dashboard/catalog" sub="in catalog" />
-        <StatCard title="New enquiries" value={loading ? "-" : String(analytics?.counts.newEnquiries ?? 0)} icon={Inbox} href="/dashboard/inbox" badge={analytics?.counts.newEnquiries ? `${analytics?.counts.newEnquiries} new` : undefined} />
-        <StatCard title="Customers" value={loading ? "-" : String(analytics?.counts.customers ?? 0)} icon={FileText} href="/dashboard/inbox" sub="total" />
-        <StatCard title="Payments received" value={loading ? "-" : paidRevenue} icon={Banknote} href="/dashboard/orders" sub="paid payments" />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <QuickActionCard title="Import data" description="Website, PDF, CSV or photo — we’ll structure it" icon={Upload} href="/dashboard/importer" primary />
-        <QuickActionCard title="Manage catalog" description="Prices, availability, categories" icon={Package} href="/dashboard/catalog" />
-        <QuickActionCard title="Website & QR" description="Preview, publish, share QR" icon={Globe} href="/dashboard/website" />
-      </div>
-
-      {analytics && analytics.recentEvents.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recent activity</CardTitle>
-            <CardDescription>What happened lately — who, what, when</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y">
-              {analytics.recentEvents.slice(0, 6).map((ev, i) => (
-                <li key={i} className="flex items-center justify-between py-3 text-sm">
-                  <span className="flex items-center gap-2"><Sparkles className="h-3 w-3 text-muted-foreground" /> <span className="font-medium">{ev.type.replace(/_/g, " ")}</span></span>
-                  <span className="text-muted-foreground">{new Date(ev.at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+      {/* 3. Needs Your Attention */}
+      {!isNewBusiness && (
+        <AttentionPanel items={attentionItems} />
       )}
 
-      {!selected && businesses.length === 0 && !loading && (
-        <Card className="border-dashed">
-          <CardContent className="py-10 text-center">
-            <h3 className="font-semibold">Start with your business</h3>
-            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">Create your business profile, then import your menu or catalog. We’ll build your website and QR automatically.</p>
-            <Button asChild className="mt-4"><Link href="/dashboard/business">Create business</Link></Button>
-          </CardContent>
-        </Card>
-      )}
+      {/* 4. Website status (compact; always visible if website capability) */}
+      <WebsiteStatus
+        analytics={data?.analytics ?? null}
+        hasCapability={hasCapability}
+        loading={loading}
+      />
+
+      {/* 5. Quick Actions */}
+      <QuickActions
+        hasCapability={hasCapability}
+        businessType={selected.businessType}
+      />
+
+      {/* 6. At a Glance metrics */}
+      <AtGlanceMetrics
+        analytics={data?.analytics ?? null}
+        business={selected}
+        hasCapability={hasCapability}
+        loading={loading}
+      />
+
+      {/* 7. Recent Activity */}
+      <div className="grid gap-6 lg:grid-cols-1">
+        <RecentActivity
+          events={data?.analytics?.recentEvents ?? []}
+          loading={loading}
+        />
+      </div>
     </div>
-  );
-}
-
-function StatCard({ title, value, icon: Icon, href, badge, sub }: { title: string; value: string; icon: React.ElementType; href: string; badge?: string; sub?: string }) {
-  return (
-    <Card className="hover:shadow-sm transition-shadow">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value} {badge && <Badge variant="warning" className="ml-2 align-middle">{badge}</Badge>}</div>
-        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-        <Link href={href} className="mt-2 inline-block text-xs text-muted-foreground hover:text-primary">View →</Link>
-      </CardContent>
-    </Card>
-  );
-}
-
-function QuickActionCard({ title, description, icon: Icon, href, primary }: { title: string; description: string; icon: React.ElementType; href: string; primary?: boolean }) {
-  return (
-    <Card className={primary ? "border-primary/20" : ""}>
-      <CardHeader>
-        <div className="flex items-center gap-3">
-          <div className={`rounded-md p-2 ${primary ? "bg-primary text-primary-foreground" : "bg-primary/10"}`}><Icon className={`h-5 w-5 ${primary ? "text-white" : "text-primary"}`} /></div>
-          <div><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></div>
-        </div>
-      </CardHeader>
-      <CardContent><Button asChild size="sm" variant={primary ? "default" : "outline"}><Link href={href}>Open</Link></Button></CardContent>
-    </Card>
   );
 }
