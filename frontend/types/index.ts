@@ -529,12 +529,9 @@ export type AnalyticsOverview = {
     newEnquiries: number;
     customers: number;
     imports: number;
-    orders?: number;
-    bookings?: number;
   };
   financials: {
     paidRevenue: number;
-    pendingRevenue?: number;
   };
   website: { status: string; id: string } | null;
   recentEvents: { type: string; at: string }[];
