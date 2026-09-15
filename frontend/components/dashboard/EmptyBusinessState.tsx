@@ -12,6 +12,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Upload, Globe, Package } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { Business } from "@/types";
 import type { Capability } from "@/config/business";
 
@@ -22,7 +23,7 @@ interface EmptyBusinessStateProps {
 
 interface StepItem {
   id: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   label: string;
   href: string;
   description: string;
