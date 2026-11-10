@@ -132,6 +132,12 @@ jobs:
             "CREATE EXTENSION IF NOT EXISTS vector;"
         working-directory: backend
 
+      - name: Verify pgvector extension is enabled
+        run: |
+          PGPASSWORD=ci_password_test_only psql -h localhost -U frontdesk_ci -d frontdesk_ci -tAc \
+            "SELECT extname FROM pg_extension WHERE extname='vector';" | grep -q '^vector$'
+        working-directory: backend
+
       - name: Push PostgreSQL schema
         run: npx prisma db push --schema prisma/schema.pg.prisma --skip-generate
         working-directory: backend
